@@ -276,11 +276,28 @@ class TaskSpecificLoss(nn.Module):
         """
         if self.task_name == "qa":
             # QA has start and end positions
-            start_logits, end_logits = predictions.split(1, dim=-1)
-            start_targets, end_targets = targets[:, 0], targets[:, 1]
+            # predictions: [batch_size, seq_len, 2] or [batch_size, 2]
+            # targets: [batch_size, 2] where targets[:, 0] = start_pos, targets[:, 1] = end_pos
             
-            start_loss = self.loss_fn(start_logits.squeeze(-1), start_targets)
-            end_loss = self.loss_fn(end_logits.squeeze(-1), end_targets)
+            if predictions.dim() == 3:
+                # predictions: [batch_size, seq_len, 2]
+                start_logits = predictions[:, :, 0]  # [batch_size, seq_len]
+                end_logits = predictions[:, :, 1]    # [batch_size, seq_len]
+            else:
+                # predictions: [batch_size, 2] - this shouldn't happen for QA but handle it
+                start_logits = predictions[:, 0].unsqueeze(1)  # [batch_size, 1]
+                end_logits = predictions[:, 1].unsqueeze(1)    # [batch_size, 1]
+            
+            start_targets = targets[:, 0]  # [batch_size]
+            end_targets = targets[:, 1]    # [batch_size]
+            
+            # Ensure targets are within valid range
+            seq_len = start_logits.size(1)
+            start_targets = torch.clamp(start_targets, 0, seq_len - 1)
+            end_targets = torch.clamp(end_targets, 0, seq_len - 1)
+            
+            start_loss = self.loss_fn(start_logits, start_targets)
+            end_loss = self.loss_fn(end_logits, end_targets)
             
             return self.weight * (start_loss + end_loss) / 2
         else:

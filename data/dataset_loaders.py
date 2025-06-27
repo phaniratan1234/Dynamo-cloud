@@ -126,9 +126,21 @@ class QADataset(DynamoDataset):
             return_tensors='pt'
         )
         
-        # Get answer positions (simplified)
+        # Get answer positions and clamp to valid range
         start_pos = example.get('start_position', 0)
         end_pos = example.get('end_position', 0)
+        
+        # Get actual sequence length (excluding padding)
+        input_ids = tokenized['input_ids'].squeeze(0)
+        actual_length = (input_ids != self.tokenizer.pad_token_id).sum().item()
+        
+        # Clamp positions to be within valid range [0, actual_length-1]
+        start_pos = max(0, min(start_pos, actual_length - 1))
+        end_pos = max(start_pos, min(end_pos, actual_length - 1))
+        
+        # Ensure end_pos >= start_pos
+        if end_pos < start_pos:
+            end_pos = start_pos
         
         return {
             'input_ids': tokenized['input_ids'].squeeze(0),
@@ -136,7 +148,8 @@ class QADataset(DynamoDataset):
             'task_name': 'qa',
             'task_id': 1,
             'target': torch.tensor([start_pos, end_pos], dtype=torch.long),
-            'input_text': input_text
+            'input_text': input_text,
+            'actual_length': actual_length
         }
 
 

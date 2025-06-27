@@ -180,30 +180,30 @@ class TaskSpecificLoRA(nn.Module):
             )
         
         elif self.task_name == "summarization":
-            # Sequence-to-sequence head (simplified)
+            # Summarization head: map to sequence length 128 (to match target format)
             return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.Linear(self.hidden_size, self.hidden_size // 2),
                 nn.ReLU(),
                 nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size, self.hidden_size)  # Hidden state for generation
+                nn.Linear(self.hidden_size // 2, 128)  # Match target sequence length
             )
         
         elif self.task_name == "code_generation":
-            # Code generation head
+            # Code generation head: map to sequence length 256 (to match target format)
             return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.Linear(self.hidden_size, self.hidden_size // 2),
                 nn.ReLU(),
                 nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size, self.hidden_size)  # Hidden state for generation
+                nn.Linear(self.hidden_size // 2, 256)  # Match target sequence length
             )
         
         elif self.task_name == "translation":
-            # Translation head
+            # Translation head: map to sequence length 256 (to match target format)
             return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.Linear(self.hidden_size, self.hidden_size // 2),
                 nn.ReLU(),
                 nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size, self.hidden_size)  # Hidden state for generation
+                nn.Linear(self.hidden_size // 2, 256)  # Match target sequence length
             )
         
         else:

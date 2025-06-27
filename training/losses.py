@@ -259,7 +259,9 @@ class TaskSpecificLoss(nn.Module):
         elif task_name == "qa":
             self.loss_fn = nn.CrossEntropyLoss()
         elif task_name in ["summarization", "code_generation", "translation"]:
-            self.loss_fn = nn.MSELoss()  # Simplified for hidden state matching
+            # For generation tasks, use MSE loss between predicted and target embeddings
+            # This is a simplified approach - in practice you'd use cross-entropy with vocabulary
+            self.loss_fn = nn.MSELoss()
         else:
             self.loss_fn = nn.CrossEntropyLoss()
     
@@ -300,6 +302,22 @@ class TaskSpecificLoss(nn.Module):
             end_loss = self.loss_fn(end_logits, end_targets)
             
             return self.weight * (start_loss + end_loss) / 2
+        
+        elif self.task_name in ["summarization", "code_generation", "translation"]:
+            # For generation tasks: predictions [batch_size, seq_len], targets [batch_size, seq_len]
+            # Use MSE loss after converting targets to float (simplified approach)
+            targets_float = targets.float()
+            
+            # Handle potential shape mismatches
+            if predictions.shape != targets_float.shape:
+                # If shapes don't match, compute loss only on overlapping dimensions
+                min_dim = min(predictions.size(-1), targets_float.size(-1))
+                predictions_trimmed = predictions[:, :min_dim]
+                targets_trimmed = targets_float[:, :min_dim]
+                return self.weight * self.loss_fn(predictions_trimmed, targets_trimmed)
+            else:
+                return self.weight * self.loss_fn(predictions, targets_float)
+        
         else:
             return self.weight * self.loss_fn(predictions, targets)
 

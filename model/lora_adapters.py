@@ -259,6 +259,10 @@ class TaskSpecificLoRA(nn.Module):
             # Use mean-pooled representation for each target position
             pooled_hidden = torch.mean(hidden_states, dim=1)  # [batch_size, hidden_size]
             
+            # Get the ModuleDict components
+            pos_projection = self.task_head['pos_projection']
+            vocab_head = self.task_head['vocab_head']
+            
             # Generate position-aware embeddings
             vocab_logits_list = []
             for pos in range(target_seq_len):
@@ -267,8 +271,8 @@ class TaskSpecificLoRA(nn.Module):
                 position_hidden = torch.cat([pooled_hidden, pos_encoding], dim=1)
                 
                 # Project to match original hidden size
-                position_hidden_projected = self.task_head['pos_projection'](position_hidden)
-                vocab_logits = self.task_head['vocab_head'](position_hidden_projected)
+                position_hidden_projected = pos_projection(position_hidden)
+                vocab_logits = vocab_head(position_hidden_projected)
                 vocab_logits_list.append(vocab_logits)
             
             # Stack to create [batch_size, target_seq_len, vocab_size]

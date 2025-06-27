@@ -1,0 +1,4 @@
+2025-06-27 01:10:44,178 - training.phase1_lora_training - INFO - info:68 - Phase 1 trainer initialized
+2025-06-27 01:10:44,178 - training.phase1_lora_training - INFO - info:68 - Starting Phase 1: Training all LoRA adapters
+2025-06-27 01:10:44,623 - training.phase1_lora_training - INFO - info:68 - Saved Phase 1 checkpoint to ./checkpoints/phase1
+2025-06-27 01:10:44,623 - training.phase1_lora_training - INFO - info:68 - Phase 1 training completed

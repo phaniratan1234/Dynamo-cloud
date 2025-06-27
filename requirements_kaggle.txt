@@ -1,0 +1,41 @@
+# DYNAMO Requirements for Kaggle/Cloud Training
+# Optimized for T4 GPUs and fast installation
+
+# Core ML libraries (usually pre-installed on Kaggle)
+torch>=2.0.0
+torchvision
+torchaudio
+
+# Transformers and related
+transformers>=4.30.0
+datasets>=2.12.0
+tokenizers>=0.13.0
+
+# LoRA implementation
+peft>=0.4.0
+
+# Training utilities
+accelerate>=0.20.0
+evaluate>=0.4.0
+
+# Data processing
+numpy>=1.21.0
+pandas>=1.5.0
+scikit-learn>=1.2.0
+
+# Visualization and logging
+matplotlib>=3.5.0
+seaborn>=0.11.0
+tqdm>=4.64.0
+
+# Text processing
+nltk>=3.8
+rouge-score>=0.1.2
+sacrebleu>=2.3.0
+
+# Configuration and utilities
+PyYAML>=6.0
+wandb  # Optional, disabled by default
+
+# Memory optimization
+psutil>=5.9.0 

@@ -1,0 +1,47 @@
+{
+  "datasets": {
+    "sentiment": {
+      "splits": {
+        "train": 67349,
+        "validation": 872,
+        "test": 1821
+      }
+    },
+    "qa": {
+      "splits": {
+        "train": 87599,
+        "validation": 10570,
+        "test": 0
+      }
+    },
+    "summarization": {
+      "splits": {
+        "train": 20000,
+        "validation": 2000,
+        "test": 2000
+      }
+    },
+    "code_generation": {
+      "splits": {
+        "train": 20000,
+        "validation": 2000,
+        "test": 2000
+      }
+    },
+    "translation": {
+      "splits": {
+        "train": 10000,
+        "validation": 1000,
+        "test": 1000
+      }
+    }
+  },
+  "total_examples": 228211,
+  "tasks": [
+    "sentiment",
+    "qa",
+    "summarization",
+    "code_generation",
+    "translation"
+  ]
+}

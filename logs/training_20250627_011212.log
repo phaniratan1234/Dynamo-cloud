@@ -1,0 +1,7 @@
+2025-06-27 01:12:12,429 - training.phase1_lora_training - INFO - info:68 - Phase 1 trainer initialized
+2025-06-27 01:12:12,429 - training.phase1_lora_training - INFO - info:68 - Starting Phase 1: Training all LoRA adapters
+2025-06-27 01:12:12,868 - training.phase1_lora_training - INFO - info:68 - ==================================================
+2025-06-27 01:12:12,868 - training.phase1_lora_training - INFO - info:68 - Training sentiment adapter
+2025-06-27 01:12:12,868 - training.phase1_lora_training - INFO - info:68 - ==================================================
+2025-06-27 01:12:12,868 - training.phase1_lora_training - INFO - info:68 - Training sentiment adapter for 2 epochs
+2025-06-27 01:12:12,870 - training - INFO - info:68 - Starting Epoch 0

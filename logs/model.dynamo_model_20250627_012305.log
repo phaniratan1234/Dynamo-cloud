@@ -1,0 +1,7 @@
+2025-06-27 01:23:07,075 - model.dynamo_model - INFO - info:68 - Initializing DYNAMO model components...
+2025-06-27 01:23:07,764 - model.dynamo_model - INFO - info:68 - DYNAMO model initialized with 26,928,524 total parameters
+2025-06-27 01:23:07,765 - model.dynamo_model - INFO - info:68 -   - Backbone (frozen): 0
+2025-06-27 01:23:07,766 - model.dynamo_model - INFO - info:68 -   - Adapters: 26,401,924
+2025-06-27 01:23:07,766 - model.dynamo_model - INFO - info:68 -   - Router: 526,600
+2025-06-27 01:23:07,766 - model.dynamo_model - INFO - info:68 -   - Tasks: ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']
+2025-06-27 01:23:08,387 - model.dynamo_model - INFO - info:68 - Set to Phase 1: Training individual LoRA adapters

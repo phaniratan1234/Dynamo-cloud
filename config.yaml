@@ -1,0 +1,79 @@
+# DYNAMO Configuration - Optimized for T4 GPUs
+device: cuda
+seed: 42
+use_wandb: false
+
+# Model Configuration
+model:
+  base_model_name: roberta-base
+  freeze_backbone: true
+  hidden_size: 768
+  num_tasks: 5
+  router_hidden_sizes: [512, 256]
+  router_dropout: 0.1
+  temperature_init: 1.0
+  temperature_learnable: true
+  lora_configs:
+    sentiment:
+      rank: 16
+      alpha: 32
+      dropout: 0.1
+      target_modules: ['query', 'value', 'key', 'dense']
+    qa:
+      rank: 24
+      alpha: 48
+      dropout: 0.1
+      target_modules: ['query', 'value', 'key', 'dense']
+    summarization:
+      rank: 32
+      alpha: 64
+      dropout: 0.1
+      target_modules: ['query', 'value', 'key', 'dense']
+    code_generation:
+      rank: 32
+      alpha: 64
+      dropout: 0.1
+      target_modules: ['query', 'value', 'key', 'dense']
+    translation:
+      rank: 32
+      alpha: 64
+      dropout: 0.1
+      target_modules: ['query', 'value', 'key', 'dense']
+
+# Training Configuration - Optimized for T4 (16GB memory)
+training:
+  num_epochs: 1
+  batch_size: 64  # Large batch for T4
+  gradient_accumulation_steps: 1
+  max_length: 512  # Full sequence length
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  lora_lr: 5.0e-4
+  router_lr: 0.001
+  joint_lr: 0.0001
+  load_balance_weight: 0.1
+  efficiency_weight: 0.05
+  consistency_weight: 0.1
+  gumbel_temperature: 1.0
+  temperature_decay: 0.999
+  min_temperature: 0.1
+
+# Data Configuration - Optimized for speed
+data:
+  max_input_length: 512
+  max_target_length: 128
+  data_dir: ./data
+  cache_dir: ./cache
+  
+# Evaluation Configuration
+evaluation:
+  eval_batch_size: 64  # Large eval batch
+  eval_steps: 500
+  save_steps: 1000
+  logging_steps: 50  # More frequent logging
+  visualize_routing: true
+
+# Output directories
+output_dir: ./outputs
+log_dir: ./logs
+checkpoint_dir: ./checkpoints

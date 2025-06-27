@@ -259,9 +259,9 @@ class TaskSpecificLoss(nn.Module):
         elif task_name == "qa":
             self.loss_fn = nn.CrossEntropyLoss()
         elif task_name in ["summarization", "code_generation", "translation"]:
-            # For generation tasks, use MSE loss between predicted and target embeddings
-            # This is a simplified approach - in practice you'd use cross-entropy with vocabulary
-            self.loss_fn = nn.MSELoss()
+            # For generation tasks, use CrossEntropy loss for vocabulary prediction
+            # Ignore padding tokens (token_id = 1 for RoBERTa)
+            self.loss_fn = nn.CrossEntropyLoss(ignore_index=1)  # RoBERTa pad_token_id = 1
         else:
             self.loss_fn = nn.CrossEntropyLoss()
     
@@ -304,19 +304,31 @@ class TaskSpecificLoss(nn.Module):
             return self.weight * (start_loss + end_loss) / 2
         
         elif self.task_name in ["summarization", "code_generation", "translation"]:
-            # For generation tasks: predictions [batch_size, seq_len], targets [batch_size, seq_len]
-            # Use MSE loss after converting targets to float (simplified approach)
-            targets_float = targets.float()
+            # For generation tasks: 
+            # predictions: [batch_size, seq_len, vocab_size] - vocabulary logits for each position
+            # targets: [batch_size, seq_len] - target token IDs
             
-            # Handle potential shape mismatches
-            if predictions.shape != targets_float.shape:
-                # If shapes don't match, compute loss only on overlapping dimensions
-                min_dim = min(predictions.size(-1), targets_float.size(-1))
-                predictions_trimmed = predictions[:, :min_dim]
-                targets_trimmed = targets_float[:, :min_dim]
-                return self.weight * self.loss_fn(predictions_trimmed, targets_trimmed)
-            else:
-                return self.weight * self.loss_fn(predictions, targets_float)
+            batch_size, seq_len, vocab_size = predictions.shape
+            target_seq_len = targets.shape[1]
+            
+            # Handle sequence length mismatch
+            if seq_len != target_seq_len:
+                # Take minimum length to avoid index errors
+                min_len = min(seq_len, target_seq_len)
+                predictions = predictions[:, :min_len, :]  # [batch_size, min_len, vocab_size]
+                targets = targets[:, :min_len]  # [batch_size, min_len]
+                seq_len = min_len
+            
+            # Reshape for CrossEntropy loss
+            # predictions: [batch_size * seq_len, vocab_size]
+            # targets: [batch_size * seq_len]
+            predictions_flat = predictions.view(-1, vocab_size)
+            targets_flat = targets.view(-1)
+            
+            # Compute sequence-to-sequence loss
+            loss = self.loss_fn(predictions_flat, targets_flat)
+            
+            return self.weight * loss
         
         else:
             return self.weight * self.loss_fn(predictions, targets)

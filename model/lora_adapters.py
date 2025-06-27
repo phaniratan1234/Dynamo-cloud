@@ -179,32 +179,17 @@ class TaskSpecificLoRA(nn.Module):
                 nn.Linear(self.hidden_size, 2)  # Start and end logits
             )
         
-        elif self.task_name == "summarization":
-            # Summarization head: map to sequence length 128 (to match target format)
-            return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size // 2),
-                nn.ReLU(),
-                nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size // 2, 128)  # Match target sequence length
-            )
-        
-        elif self.task_name == "code_generation":
-            # Code generation head: map to sequence length 256 (to match target format)
-            return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size // 2),
-                nn.ReLU(),
-                nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size // 2, 256)  # Match target sequence length
-            )
-        
-        elif self.task_name == "translation":
-            # Translation head: map to sequence length 256 (to match target format)
-            return nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size // 2),
-                nn.ReLU(),
-                nn.Dropout(self.dropout),
-                nn.Linear(self.hidden_size // 2, 256)  # Match target sequence length
-            )
+        elif self.task_name in ["summarization", "code_generation", "translation"]:
+            # Generation tasks: predict vocabulary logits with positional encoding
+            return nn.ModuleDict({
+                'vocab_head': nn.Sequential(
+                    nn.Linear(self.hidden_size, self.hidden_size),
+                    nn.ReLU(),
+                    nn.Dropout(self.dropout),
+                    nn.Linear(self.hidden_size, 50265)  # RoBERTa vocab size
+                ),
+                'pos_projection': nn.Linear(self.hidden_size + 1, self.hidden_size)
+            })
         
         else:
             # Generic classification head
@@ -260,7 +245,37 @@ class TaskSpecificLoRA(nn.Module):
         elif self.task_name == "qa":
             return self.task_head(hidden_states)  # [batch_size, seq_len, 2]
         
-        # Use CLS token for generation tasks (as initial hidden state)
+        # Use proper sequence-to-sequence prediction for generation tasks
+        elif self.task_name in ["summarization", "code_generation", "translation"]:
+            # Use all input tokens for context-aware generation
+            batch_size, input_seq_len, hidden_size = hidden_states.shape
+            
+            # Define target sequence length for each task
+            if self.task_name == "summarization":
+                target_seq_len = 128
+            else:  # code_generation, translation
+                target_seq_len = 256
+            
+            # Use mean-pooled representation for each target position
+            pooled_hidden = torch.mean(hidden_states, dim=1)  # [batch_size, hidden_size]
+            
+            # Generate position-aware embeddings
+            vocab_logits_list = []
+            for pos in range(target_seq_len):
+                # Add position-specific information
+                pos_encoding = torch.full_like(pooled_hidden[:, :1], pos / target_seq_len)
+                position_hidden = torch.cat([pooled_hidden, pos_encoding], dim=1)
+                
+                # Project to match original hidden size
+                position_hidden_projected = self.task_head['pos_projection'](position_hidden)
+                vocab_logits = self.task_head['vocab_head'](position_hidden_projected)
+                vocab_logits_list.append(vocab_logits)
+            
+            # Stack to create [batch_size, target_seq_len, vocab_size]
+            vocab_logits_seq = torch.stack(vocab_logits_list, dim=1)
+            return vocab_logits_seq
+        
+        # Use CLS token for other tasks
         else:
             cls_hidden = hidden_states[:, 0, :]  # [batch_size, hidden_size]
             return self.task_head(cls_hidden)

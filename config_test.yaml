@@ -1,0 +1,90 @@
+# DYNAMO Test Configuration - CPU Development Mode
+device: cpu
+seed: 42
+use_wandb: false
+
+# Model Configuration - Smaller for testing
+model:
+  base_model_name: roberta-base
+  freeze_backbone: true
+  hidden_size: 768
+  num_tasks: 5
+  router_hidden_sizes: [256, 128]  # Smaller router
+  router_dropout: 0.1
+  temperature_init: 1.0
+  temperature_learnable: true
+  lora_configs:
+    sentiment:
+      rank: 8   # Smaller ranks for testing
+      alpha: 16
+      dropout: 0.1
+      target_modules: ['query', 'value']  # Fewer modules
+    qa:
+      rank: 8
+      alpha: 16
+      dropout: 0.1
+      target_modules: ['query', 'value']
+    summarization:
+      rank: 8
+      alpha: 16
+      dropout: 0.1
+      target_modules: ['query', 'value']
+    code_generation:
+      rank: 8
+      alpha: 16
+      dropout: 0.1
+      target_modules: ['query', 'value']
+    translation:
+      rank: 8
+      alpha: 16
+      dropout: 0.1
+      target_modules: ['query', 'value']
+
+# Training Configuration - Very light for testing
+training:
+  num_epochs: 1
+  batch_size: 4        # Very small batch for CPU
+  gradient_accumulation_steps: 1
+  max_length: 128      # Shorter sequences
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  lora_lr: 0.001
+  router_lr: 0.001
+  joint_lr: 0.0001
+  load_balance_weight: 0.1
+  efficiency_weight: 0.05
+  consistency_weight: 0.1
+  gumbel_temperature: 1.0
+  temperature_decay: 0.999
+  min_temperature: 0.1
+  curriculum_start_ratio: 0.1
+  curriculum_end_ratio: 1.0
+  patience: 3
+
+# Data Configuration - Tiny datasets for testing
+data:
+  max_input_length: 128
+  max_target_length: 64
+  data_dir: ./data
+  cache_dir: ./cache
+  
+  # Very small dataset sizes for quick testing
+  sst2_size: 50
+  squad_size: 50
+  xsum_size: 50
+  code_gen_size: 50
+  translation_size: 50
+  mixed_task_size: 100
+  
+# Evaluation Configuration
+evaluation:
+  eval_batch_size: 4
+  eval_steps: 10
+  save_steps: 50
+  logging_steps: 5
+  visualize_routing: false  # Disable for testing
+
+# Output directories
+output_dir: ./outputs
+log_dir: ./logs
+checkpoint_dir: ./checkpoints 

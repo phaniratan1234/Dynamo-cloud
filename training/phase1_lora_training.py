@@ -167,20 +167,29 @@ class Phase1Trainer:
         logger.info(f"Completed training {task_name} adapter. Best val loss: {best_val_loss:.4f}")
         return training_metrics
     
-    def train_all_adapters(self) -> Dict[str, Dict[str, float]]:
+    def train_all_adapters(self, resume: bool = True) -> Dict[str, Dict[str, float]]:
         """
         Train all LoRA adapters sequentially.
         
+        Args:
+            resume: Whether to resume from existing checkpoints
+            
         Returns:
             Training metrics for all adapters
         """
         logger.info("Starting Phase 1: Training all LoRA adapters")
         
-        # Check for existing checkpoints
-        completed_adapters = self._check_existing_checkpoints()
-        if completed_adapters:
-            logger.info(f"Found existing checkpoints for: {completed_adapters}")
-            self._load_existing_checkpoints(completed_adapters)
+        # Check for existing checkpoints only if resume is enabled
+        completed_adapters = []
+        if resume:
+            completed_adapters = self._check_existing_checkpoints()
+            if completed_adapters:
+                logger.info(f"Found existing checkpoints for: {completed_adapters}")
+                self._load_existing_checkpoints(completed_adapters)
+            else:
+                logger.info("No existing checkpoints found")
+        else:
+            logger.info("Skipping checkpoint loading (resume=False)")
         
         # Load datasets
         train_datasets = self.data_loader.create_datasets('train')
@@ -535,7 +544,7 @@ def run_phase1_training(config: Config, model: DynamoModel, resume: bool = True)
     trainer = Phase1Trainer(config, model)
     
     # Run training
-    metrics = trainer.train_all_adapters()
+    metrics = trainer.train_all_adapters(resume=resume)
     
     return metrics
 

@@ -206,14 +206,24 @@ class Phase3Trainer:
         logger.info(f"Completed joint training. Best val loss: {best_val_loss:.4f}")
         return training_metrics
     
-    def train_with_curriculum(self) -> Dict[str, float]:
+    def train_with_curriculum(self, resume: bool = True) -> Dict[str, float]:
         """
         Train with curriculum learning strategy.
         
+        Args:
+            resume: Whether to resume from existing checkpoints
+            
         Returns:
             Training metrics
         """
         logger.info("Starting Phase 3: Joint fine-tuning with curriculum learning")
+        
+        # Check for existing checkpoint
+        if resume and self._check_phase3_checkpoint():
+            logger.info("✅ Phase 3 already completed - loading checkpoint")
+            return self._load_phase3_checkpoint()
+        elif not resume:
+            logger.info("Skipping checkpoint loading (resume=False)")
         
         # Load datasets
         train_datasets = self.data_loader.create_datasets('train')
@@ -741,6 +751,36 @@ class Phase3Trainer:
         
         wandb.log(wandb_metrics, step=self.global_step)
 
+    def _check_phase3_checkpoint(self) -> bool:
+        """Check if Phase 3 checkpoint exists."""
+        checkpoint_dir = os.path.join(self.config.checkpoint_dir, "phase3")
+        checkpoint_path = os.path.join(checkpoint_dir, "best_joint_model.pt")
+        return os.path.exists(checkpoint_path)
+    
+    def _load_phase3_checkpoint(self) -> Dict[str, Any]:
+        """Load Phase 3 checkpoint."""
+        checkpoint_dir = os.path.join(self.config.checkpoint_dir, "phase3")
+        checkpoint_path = os.path.join(checkpoint_dir, "best_joint_model.pt")
+        metrics_path = os.path.join(checkpoint_dir, "training_metrics.pt")
+        
+        try:
+            # Load model state
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Load metrics
+            if os.path.exists(metrics_path):
+                metrics = torch.load(metrics_path, map_location='cpu')
+            else:
+                metrics = checkpoint.get('metrics', {"status": "loaded"})
+            
+            logger.info(f"✅ Loaded Phase 3 checkpoint from {checkpoint_path}")
+            return metrics
+            
+        except Exception as e:
+            logger.warning(f"Failed to load Phase 3 checkpoint: {e}")
+            return {"status": "failed_to_load"}
+
 
 def run_phase3_training(config: Config, model: DynamoModel, resume: bool = True) -> Dict[str, Any]:
     """
@@ -761,7 +801,7 @@ def run_phase3_training(config: Config, model: DynamoModel, resume: bool = True)
     trainer = Phase3Trainer(config, model)
     
     # Run training
-    metrics = trainer.train_with_curriculum()
+    metrics = trainer.train_with_curriculum(resume=resume)
     
     return metrics
 

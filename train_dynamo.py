@@ -122,6 +122,74 @@ def check_phase1_checkpoints(checkpoint_dir: str = "./checkpoints/phase1") -> li
     return completed_adapters
 
 
+def check_phase2_checkpoint(checkpoint_dir: str = "./checkpoints/phase2") -> bool:
+    """Check if Phase 2 (router training) has been completed."""
+    checkpoint_path = Path(checkpoint_dir)
+    
+    if not checkpoint_path.exists():
+        print(f"📁 No Phase 2 checkpoint found at {checkpoint_dir}")
+        return False
+    
+    # Look for router checkpoint
+    router_checkpoint = checkpoint_path / "best_router.pt"
+    phase2_model = checkpoint_path / "phase2_model.pt"
+    
+    if router_checkpoint.exists() or phase2_model.exists():
+        print(f"✅ Found existing Phase 2 checkpoint")
+        return True
+    else:
+        print("📁 No completed Phase 2 checkpoint found")
+        return False
+
+
+def check_phase3_checkpoint(checkpoint_dir: str = "./checkpoints/phase3") -> bool:
+    """Check if Phase 3 (joint fine-tuning) has been completed."""
+    checkpoint_path = Path(checkpoint_dir)
+    
+    if not checkpoint_path.exists():
+        print(f"📁 No Phase 3 checkpoint found at {checkpoint_dir}")
+        return False
+    
+    # Look for joint training checkpoint
+    joint_checkpoint = checkpoint_path / "best_joint_model.pt"
+    phase3_metrics = checkpoint_path / "training_metrics.pt"
+    
+    if joint_checkpoint.exists() and phase3_metrics.exists():
+        print(f"✅ Found existing Phase 3 checkpoint")
+        return True
+    else:
+        print("📁 No completed Phase 3 checkpoint found")
+        return False
+
+
+def load_phase_checkpoint(model: DynamoModel, phase: int, checkpoint_dir: str) -> bool:
+    """Load checkpoint for a specific phase."""
+    try:
+        if phase == 2:
+            # Load Phase 2 checkpoint
+            phase2_path = Path(checkpoint_dir) / "phase2" / "phase2_model.pt"
+            if phase2_path.exists():
+                checkpoint = torch.load(phase2_path, map_location=model.device)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"✅ Loaded Phase 2 checkpoint from {phase2_path}")
+                return True
+        
+        elif phase == 3:
+            # Load Phase 3 checkpoint  
+            phase3_path = Path(checkpoint_dir) / "phase3" / "best_joint_model.pt"
+            if phase3_path.exists():
+                checkpoint = torch.load(phase3_path, map_location=model.device)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"✅ Loaded Phase 3 checkpoint from {phase3_path}")
+                return True
+                
+    except Exception as e:
+        print(f"⚠️  Failed to load Phase {phase} checkpoint: {e}")
+        return False
+    
+    return False
+
+
 def run_phase1(config_obj: Config, model: DynamoModel, resume: bool = True) -> dict:
     """Run Phase 1: LoRA adapter training with checkpointing support."""
     print("🎯 Starting Phase 1: LoRA Adapter Training")
@@ -142,10 +210,17 @@ def run_phase1(config_obj: Config, model: DynamoModel, resume: bool = True) -> d
     return result
 
 
-def run_phase2(config_obj: Config, model: DynamoModel) -> dict:
-    """Run Phase 2: Router training."""
+def run_phase2(config_obj: Config, model: DynamoModel, resume: bool = True) -> dict:
+    """Run Phase 2: Router training with checkpointing support."""
     print("🎯 Starting Phase 2: Dynamic Router Training")
     print("="*60)
+    
+    if resume:
+        if check_phase2_checkpoint():
+            print("🔄 Phase 2 already completed - loading checkpoint")
+            if load_phase_checkpoint(model, 2, "./checkpoints"):
+                print("⏭️  Skipping Phase 2 (already trained)")
+                return {"status": "skipped", "checkpoint_loaded": True}
     
     start_time = time.time()
     result = run_phase2_training(config_obj, model)
@@ -155,10 +230,17 @@ def run_phase2(config_obj: Config, model: DynamoModel) -> dict:
     return result
 
 
-def run_phase3(config_obj: Config, model: DynamoModel) -> dict:
-    """Run Phase 3: Joint fine-tuning."""
+def run_phase3(config_obj: Config, model: DynamoModel, resume: bool = True) -> dict:
+    """Run Phase 3: Joint fine-tuning with checkpointing support."""
     print("🎯 Starting Phase 3: Joint Fine-tuning")
     print("="*60)
+    
+    if resume:
+        if check_phase3_checkpoint():
+            print("🔄 Phase 3 already completed - loading checkpoint")
+            if load_phase_checkpoint(model, 3, "./checkpoints"):
+                print("⏭️  Skipping Phase 3 (already trained)")
+                return {"status": "skipped", "checkpoint_loaded": True}
     
     start_time = time.time()
     result = run_phase3_training(config_obj, model)
@@ -238,9 +320,9 @@ def main():
         if args.phase == 1:
             result = run_phase1(config_obj, model, resume=not args.no_resume)
         elif args.phase == 2:
-            result = run_phase2(config_obj, model)
+            result = run_phase2(config_obj, model, resume=not args.no_resume)
         elif args.phase == 3:
-            result = run_phase3(config_obj, model)
+            result = run_phase3(config_obj, model, resume=not args.no_resume)
         
         print()
         print("🎉 Training completed successfully!")

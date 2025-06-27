@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+from torch.cuda.amp import GradScaler, autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any, Tuple
 import os
@@ -49,6 +50,21 @@ class Phase3Trainer:
         self.model = model
         self.device = torch.device(config.device)
         
+        # GPU Optimizations
+        if self.device.type == 'cuda':
+            # Enable cuDNN optimizations
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.enabled = True
+            
+            # Enable mixed precision training
+            self.use_amp = True
+            self.scaler = GradScaler()
+            logger.info("🚀 Phase 3 GPU optimizations enabled: cuDNN benchmark, mixed precision")
+        else:
+            self.use_amp = False
+            self.scaler = None
+            logger.info("⚠️  Phase 3 running on CPU - mixed precision disabled")
+        
         # Set model to Phase 3 mode
         self.model.set_training_phase("phase3")
         self.model.to(self.device)
@@ -59,11 +75,7 @@ class Phase3Trainer:
         # Training state
         self.current_epoch = 0
         self.global_step = 0
-        
-        # Curriculum learning parameters
-        self.curriculum_start_ratio = config.training.curriculum_start_ratio
-        self.curriculum_end_ratio = config.training.curriculum_end_ratio
-        self.current_curriculum_ratio = self.curriculum_start_ratio
+        self.current_curriculum_ratio = 0.5  # Start with balanced curriculum
         
         # Joint training specifics
         self.adapter_lr_scale = 0.1  # Scale down adapter learning rate
@@ -730,13 +742,14 @@ class Phase3Trainer:
         wandb.log(wandb_metrics, step=self.global_step)
 
 
-def run_phase3_training(config: Config, model: DynamoModel) -> Dict[str, Any]:
+def run_phase3_training(config: Config, model: DynamoModel, resume: bool = True) -> Dict[str, Any]:
     """
     Run Phase 3 training.
     
     Args:
         config: Training configuration
         model: DYNAMO model
+        resume: Whether to resume from checkpoints (default: True)
     
     Returns:
         Training metrics

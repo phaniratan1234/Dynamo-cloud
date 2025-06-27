@@ -1,4 +1,4 @@
-# DYNAMO Configuration - Optimized for T4 GPUs
+# DYNAMO Configuration - Optimized for T4 GPU Performance
 device: cuda
 seed: 42
 use_wandb: false
@@ -43,8 +43,8 @@ model:
 # Training Configuration - Optimized for T4 (16GB memory)
 training:
   num_epochs: 1
-  batch_size: 64  # Large batch for T4
-  gradient_accumulation_steps: 1
+  batch_size: 32  # Optimized for T4 memory + mixed precision
+  gradient_accumulation_steps: 2  # Effective batch size: 64
   max_length: 512  # Full sequence length
   warmup_ratio: 0.1
   weight_decay: 0.01
@@ -57,6 +57,13 @@ training:
   gumbel_temperature: 1.0
   temperature_decay: 0.999
   min_temperature: 0.1
+  
+  # GPU-specific optimizations
+  use_mixed_precision: true
+  dataloader_num_workers: 8  # Optimal for T4
+  pin_memory: true
+  prefetch_factor: 2
+  persistent_workers: true
 
 # Data Configuration - Optimized for speed
 data:
@@ -65,12 +72,20 @@ data:
   data_dir: ./data
   cache_dir: ./cache
   
+  # Dataset sizes (reduced for faster training on T4)
+  sst2_size: 8000
+  squad_size: 15000
+  xsum_size: 10000
+  code_gen_size: 6000
+  translation_size: 8000
+  mixed_task_size: 4000
+  
 # Evaluation Configuration
 evaluation:
-  eval_batch_size: 64  # Large eval batch
+  eval_batch_size: 32  # Reduced for memory efficiency
   eval_steps: 500
   save_steps: 1000
-  logging_steps: 50  # More frequent logging
+  logging_steps: 25  # More frequent logging for monitoring
   visualize_routing: true
 
 # Output directories

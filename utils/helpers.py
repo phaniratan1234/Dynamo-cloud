@@ -284,6 +284,13 @@ class AverageMeter:
         self.count = 0
     
     def update(self, val, n=1):
+        # Debug: ensure val is numeric
+        if not isinstance(val, (int, float)):
+            if hasattr(val, 'item'):
+                val = val.item()
+            else:
+                raise TypeError(f"AverageMeter.update() expects numeric value, got {type(val)}: {val}")
+        
         self.val = val
         self.sum += val * n
         self.count += n
@@ -312,6 +319,12 @@ class EarlyStopping:
         Returns:
             True if training should be stopped
         """
+        # Ensure val_loss is a float
+        if isinstance(val_loss, torch.Tensor):
+            val_loss = val_loss.item()
+        elif not isinstance(val_loss, (int, float)):
+            raise TypeError(f"val_loss must be a number, got {type(val_loss)}: {val_loss}")
+        
         if self.best_loss is None:
             self.best_loss = val_loss
             self.save_checkpoint(model)

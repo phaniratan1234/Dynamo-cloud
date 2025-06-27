@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler, autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any
 import os
@@ -19,7 +20,9 @@ from data import DatasetLoader
 from training.losses import TaskSpecificLoss
 from utils.config import Config
 from utils.logger import get_logger, TrainingLogger
-from utils.helpers import set_seed, count_parameters, move_to_device, AverageMeter, EarlyStopping
+from utils.helpers import (
+    set_seed, count_parameters, move_to_device, AverageMeter, EarlyStopping
+)
 
 logger = get_logger(__name__)
 
@@ -40,6 +43,21 @@ class Phase1Trainer:
         self.config = config
         self.model = model
         self.device = torch.device(config.device)
+        
+        # GPU Optimizations
+        if self.device.type == 'cuda' and torch.cuda.is_available():
+            # Enable cuDNN optimizations
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.enabled = True
+            
+            # Enable mixed precision training
+            self.use_amp = True
+            self.scaler = GradScaler()
+            logger.info("🚀 GPU optimizations enabled: cuDNN benchmark, mixed precision")
+        else:
+            self.use_amp = False
+            self.scaler = None
+            logger.info("⚠️  Running on CPU - mixed precision disabled")
         
         # Set model to Phase 1 mode
         self.model.set_training_phase("phase1")
@@ -226,57 +244,116 @@ class Phase1Trainer:
         self.model.train()
         loss_meter = AverageMeter()
         
+        # Gradient accumulation setup
+        gradient_accumulation_steps = getattr(self.config.training, 'gradient_accumulation_steps', 1)
+        
         progress_bar = tqdm(dataloader, desc=f"Training {task_name}")
         
         for batch_idx, batch in enumerate(progress_bar):
             batch = move_to_device(batch, self.device)
             
-            # Forward pass
-            outputs = self.model(
-                input_ids=batch['input_ids'],
-                attention_mask=batch['attention_mask'],
-                task_labels=torch.full((batch['input_ids'].size(0),), 
-                                     self.model.task_to_idx[task_name], 
-                                     device=self.device)
-            )
-            
-            # Get task-specific output
-            if task_name in outputs['task_outputs']:
-                predictions = outputs['task_outputs'][task_name]
-                targets = batch['target']
+            # Forward pass with mixed precision
+            if self.use_amp:
+                with autocast():
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        task_labels=torch.full((batch['input_ids'].size(0),), 
+                                             self.model.task_to_idx[task_name], 
+                                             device=self.device)
+                    )
+                    
+                    # Get task-specific output
+                    if task_name in outputs['task_outputs']:
+                        predictions = outputs['task_outputs'][task_name]
+                        targets = batch['target']
+                        
+                        # Compute loss and normalize by accumulation steps
+                        loss = loss_fn(predictions, targets) / gradient_accumulation_steps
                 
-                # Compute loss
-                loss = loss_fn(predictions, targets)
+                # Backward pass with gradient scaling
+                self.scaler.scale(loss).backward()
                 
-                # Backward pass
-                optimizer.zero_grad()
-                loss.backward()
-                
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), 
-                    max_norm=1.0
+                # Gradient accumulation: only step every N batches
+                if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # Gradient clipping with scaling
+                    self.scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    
+                    # Optimizer step with scaling
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
+                    scheduler.step()
+                    optimizer.zero_grad()
+            else:
+                # Standard forward pass (for CPU)
+                outputs = self.model(
+                    input_ids=batch['input_ids'],
+                    attention_mask=batch['attention_mask'],
+                    task_labels=torch.full((batch['input_ids'].size(0),), 
+                                         self.model.task_to_idx[task_name], 
+                                         device=self.device)
                 )
                 
+                # Get task-specific output
+                if task_name in outputs['task_outputs']:
+                    predictions = outputs['task_outputs'][task_name]
+                    targets = batch['target']
+                    
+                    # Compute loss and normalize by accumulation steps
+                    loss = loss_fn(predictions, targets) / gradient_accumulation_steps
+                    
+                    # Backward pass
+                    loss.backward()
+                    
+                    # Gradient accumulation: only step every N batches
+                    if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                        # Gradient clipping
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
+            
+            # Update metrics (use original loss for logging)
+            actual_loss = loss.item() * gradient_accumulation_steps
+            loss_meter.update(actual_loss, batch['input_ids'].size(0))
+            self.global_step += 1
+            
+            # Logging
+            if self.global_step % self.config.evaluation.logging_steps == 0:
+                self.training_logger.log_step(
+                    actual_loss,
+                    scheduler.get_last_lr()[0]
+                )
+            
+            # Update progress bar
+            mem_info = "N/A"
+            if torch.cuda.is_available():
+                try:
+                    mem_info = f"{torch.cuda.memory_reserved()/1024**3:.1f}GB"
+                except:
+                    mem_info = "N/A"
+            
+            progress_bar.set_postfix({
+                'loss': f"{loss_meter.avg:.4f}",
+                'lr': f"{scheduler.get_last_lr()[0]:.2e}",
+                'mem': mem_info
+            })
+        
+        # Handle any remaining gradients
+        if self.use_amp:
+            if len(dataloader) % gradient_accumulation_steps != 0:
+                self.scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+                optimizer.zero_grad()
+        else:
+            if len(dataloader) % gradient_accumulation_steps != 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 optimizer.step()
-                scheduler.step()
-                
-                # Update metrics
-                loss_meter.update(loss.item(), batch['input_ids'].size(0))
-                self.global_step += 1
-                
-                # Logging
-                if self.global_step % self.config.evaluation.logging_steps == 0:
-                    self.training_logger.log_step(
-                        loss.item(),
-                        scheduler.get_last_lr()[0]
-                    )
-                
-                # Update progress bar
-                progress_bar.set_postfix({
-                    'loss': f"{loss_meter.avg:.4f}",
-                    'lr': f"{scheduler.get_last_lr()[0]:.2e}"
-                })
+                optimizer.zero_grad()
         
         return loss_meter.avg
     
@@ -294,23 +371,43 @@ class Phase1Trainer:
             for batch in tqdm(dataloader, desc=f"Validating {task_name}"):
                 batch = move_to_device(batch, self.device)
                 
-                # Forward pass
-                outputs = self.model(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    task_labels=torch.full((batch['input_ids'].size(0),), 
-                                         self.model.task_to_idx[task_name], 
-                                         device=self.device)
-                )
-                
-                # Get task-specific output
-                if task_name in outputs['task_outputs']:
-                    predictions = outputs['task_outputs'][task_name]
-                    targets = batch['target']
+                # Forward pass with mixed precision
+                if self.use_amp:
+                    with autocast():
+                        outputs = self.model(
+                            input_ids=batch['input_ids'],
+                            attention_mask=batch['attention_mask'],
+                            task_labels=torch.full((batch['input_ids'].size(0),), 
+                                                 self.model.task_to_idx[task_name], 
+                                                 device=self.device)
+                        )
+                        
+                        # Get task-specific output
+                        if task_name in outputs['task_outputs']:
+                            predictions = outputs['task_outputs'][task_name]
+                            targets = batch['target']
+                            
+                            # Compute loss
+                            loss = loss_fn(predictions, targets)
+                            loss_meter.update(loss.item(), batch['input_ids'].size(0))
+                else:
+                    # Standard forward pass (for CPU)
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        task_labels=torch.full((batch['input_ids'].size(0),), 
+                                             self.model.task_to_idx[task_name], 
+                                             device=self.device)
+                    )
                     
-                    # Compute loss
-                    loss = loss_fn(predictions, targets)
-                    loss_meter.update(loss.item(), batch['input_ids'].size(0))
+                    # Get task-specific output
+                    if task_name in outputs['task_outputs']:
+                        predictions = outputs['task_outputs'][task_name]
+                        targets = batch['target']
+                        
+                        # Compute loss
+                        loss = loss_fn(predictions, targets)
+                        loss_meter.update(loss.item(), batch['input_ids'].size(0))
         
         return loss_meter.avg
     
@@ -419,13 +516,14 @@ class Phase1Trainer:
                 logger.warning(f"Failed to load checkpoint for {task_name}: {e}")
 
 
-def run_phase1_training(config: Config, model: DynamoModel) -> Dict[str, Dict[str, float]]:
+def run_phase1_training(config: Config, model: DynamoModel, resume: bool = True) -> Dict[str, Dict[str, float]]:
     """
     Run Phase 1 training.
     
     Args:
         config: Training configuration
         model: DYNAMO model
+        resume: Whether to resume from checkpoints (default: True)
     
     Returns:
         Training metrics for all adapters

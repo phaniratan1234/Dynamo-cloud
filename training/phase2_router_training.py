@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+from torch.cuda.amp import GradScaler, autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any
 import os
@@ -17,6 +18,7 @@ import matplotlib.pyplot as plt
 import json
 import time
 from collections import defaultdict, OrderedDict
+from pathlib import Path
 
 from model import DynamoModel
 from data import DatasetLoader, create_mixed_task_dataset, create_mixed_task_dataloader
@@ -47,6 +49,21 @@ class Phase2Trainer:
         self.config = config
         self.model = model
         self.device = torch.device(config.device)
+        
+        # GPU Optimizations
+        if self.device.type == 'cuda':
+            # Enable cuDNN optimizations
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.enabled = True
+            
+            # Enable mixed precision training
+            self.use_amp = True
+            self.scaler = GradScaler()
+            logger.info("🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision")
+        else:
+            self.use_amp = False
+            self.scaler = None
+            logger.info("⚠️  Phase 2 running on CPU - mixed precision disabled")
         
         # Set model to Phase 2 mode
         self.model.set_training_phase("phase2")
@@ -252,11 +269,12 @@ class Phase2Trainer:
             batch = move_to_device(batch, self.device)
             
             # Forward pass
-            outputs = self.model(
-                input_ids=batch['input_ids'],
-                attention_mask=batch['attention_mask'],
-                return_routing_info=True
-            )
+            with autocast():
+                outputs = self.model(
+                    input_ids=batch['input_ids'],
+                    attention_mask=batch['attention_mask'],
+                    return_routing_info=True
+                )
             
             # Get routing information
             routing_probs = outputs['routing_probs']
@@ -349,11 +367,12 @@ class Phase2Trainer:
                 batch = move_to_device(batch, self.device)
                 
                 # Forward pass
-                outputs = self.model(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    return_routing_info=True
-                )
+                with autocast():
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        return_routing_info=True
+                    )
                 
                 routing_probs = outputs['routing_probs']
                 
@@ -525,13 +544,14 @@ class Phase2Trainer:
         wandb.log(wandb_metrics, step=self.global_step)
 
 
-def run_phase2_training(config: Config, model: DynamoModel) -> Dict[str, float]:
+def run_phase2_training(config: Config, model: DynamoModel, resume: bool = True) -> Dict[str, float]:
     """
     Run Phase 2 training.
     
     Args:
         config: Training configuration
         model: DYNAMO model
+        resume: Whether to resume from checkpoints (default: True)
     
     Returns:
         Training metrics

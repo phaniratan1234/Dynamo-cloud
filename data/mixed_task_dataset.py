@@ -575,7 +575,7 @@ def create_mixed_task_dataloader(
     mixed_dataset: MixedTaskDataset,
     batch_size: int = 16,
     shuffle: bool = True,
-    num_workers: int = 0
+    num_workers: int = None
 ) -> DataLoader:
     """
     Create DataLoader for mixed task dataset.
@@ -584,16 +584,32 @@ def create_mixed_task_dataloader(
         mixed_dataset: Mixed task dataset
         batch_size: Batch size
         shuffle: Whether to shuffle
-        num_workers: Number of workers
+        num_workers: Number of workers (auto-detect if None)
     
     Returns:
         DataLoader for mixed task dataset
     """
+    # Auto-detect optimal num_workers for GPU training
+    if num_workers is None:
+        if torch.cuda.is_available():
+            # For GPU: Use more workers for better data pipeline
+            num_workers = min(8, torch.get_num_threads())
+        else:
+            # For CPU: Use fewer workers to avoid overhead
+            num_workers = min(4, torch.get_num_threads())
+    
+    # Optimize pin_memory and prefetch
+    pin_memory = torch.cuda.is_available()
+    prefetch_factor = 2 if num_workers > 0 else None
+    
     return DataLoader(
         mixed_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=torch.cuda.is_available()
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=num_workers > 0,  # Keep workers alive
+        drop_last=True  # Avoid irregular batch sizes
     )
 

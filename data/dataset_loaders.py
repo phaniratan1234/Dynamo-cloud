@@ -654,7 +654,7 @@ class DatasetLoader:
         datasets: Dict[str, Dataset],
         batch_size: int = 16,
         shuffle: bool = True,
-        num_workers: int = 0
+        num_workers: int = None
     ) -> Dict[str, DataLoader]:
         """
         Create DataLoaders for all datasets.
@@ -663,12 +663,25 @@ class DatasetLoader:
             datasets: Dictionary of datasets
             batch_size: Batch size
             shuffle: Whether to shuffle data
-            num_workers: Number of worker processes
+            num_workers: Number of worker processes (auto-detect if None)
         
         Returns:
             Dictionary of DataLoaders
         """
         dataloaders = {}
+        
+        # Auto-detect optimal num_workers for GPU training
+        if num_workers is None:
+            if torch.cuda.is_available():
+                # For GPU: Use more workers for better data pipeline
+                num_workers = min(8, torch.get_num_threads())
+            else:
+                # For CPU: Use fewer workers to avoid overhead
+                num_workers = min(4, torch.get_num_threads())
+        
+        # Optimize pin_memory and prefetch
+        pin_memory = torch.cuda.is_available()
+        prefetch_factor = 2 if num_workers > 0 else None
         
         for task_name, dataset in datasets.items():
             dataloaders[task_name] = DataLoader(
@@ -676,8 +689,16 @@ class DatasetLoader:
                 batch_size=batch_size,
                 shuffle=shuffle,
                 num_workers=num_workers,
-                pin_memory=torch.cuda.is_available()
+                pin_memory=pin_memory,
+                prefetch_factor=prefetch_factor,
+                persistent_workers=num_workers > 0,  # Keep workers alive
+                drop_last=True  # Avoid irregular batch sizes
             )
+        
+        if torch.cuda.is_available():
+            logger.info(f"🚀 DataLoaders optimized for GPU: num_workers={num_workers}, pin_memory={pin_memory}")
+        else:
+            logger.info(f"DataLoaders configured for CPU: num_workers={num_workers}")
         
         return dataloaders
 

@@ -21,6 +21,7 @@ from training.phase2_router_training import run_phase2_training
 from training.phase3_joint_finetuning import run_phase3_training
 from utils.config import Config
 from utils.logger import get_logger
+from utils.checkpoint_utils import validate_checkpoint_transition, print_phase1_status
 from gpu_monitor import GPUMonitor, check_gpu_optimization
 
 logger = get_logger(__name__)
@@ -195,17 +196,24 @@ def main():
         action="store_true",
         help="Only run GPU monitoring check without training"
     )
+    parser.add_argument(
+        "--status",
+        action="store_true", 
+        help="Check training status and phase readiness"
+    )
     
     args = parser.parse_args()
     
-    # Check if phase is required (not needed for monitor-only)
-    if not args.monitor_only and args.phase is None:
-        parser.error("--phase is required when not using --monitor-only")
+    # Check if phase is required (not needed for monitor-only or status)
+    if not args.monitor_only and not args.status and args.phase is None:
+        parser.error("--phase is required when not using --monitor-only or --status")
     
     print("🚀 DYNAMO Optimized Training Script")
     print("=" * 60)
     if args.monitor_only:
         print("🔍 Mode: GPU monitoring only")
+    elif args.status:
+        print("📊 Mode: Status check")
     else:
         print(f"📊 Phase: {args.phase}")
         print(f"🔄 Resume: {not args.no_resume}")
@@ -234,6 +242,16 @@ def main():
             print("   - Performance recommendations")
         return 0
     
+    if args.status:
+        print("📊 Checking training status...")
+        try:
+            config_dict, config_obj = load_optimized_config(args.config)
+            print_phase1_status(config_obj.checkpoint_dir)
+        except Exception as e:
+            print(f"❌ Error checking status: {e}")
+            return 1
+        return 0
+    
     if not gpu_available:
         print("⚠️  No GPU available - running in CPU development mode")
         print("ℹ️  For production T4 training, use a GPU-enabled environment")
@@ -259,6 +277,17 @@ def main():
         return 1
     
     print()
+    
+    # Validate phase transition before starting
+    print(f"\n🔍 Validating Phase {args.phase} readiness...")
+    if not validate_checkpoint_transition(0, args.phase, config_obj.checkpoint_dir):
+        print(f"\n❌ Cannot start Phase {args.phase} - prerequisites not met")
+        if args.phase == 2:
+            print("\n📊 Checking Phase 1 status...")
+            print_phase1_status(config_obj.checkpoint_dir)
+        return 1
+    
+    print(f"✅ Phase {args.phase} prerequisites satisfied")
     
     # Run training with monitoring
     try:

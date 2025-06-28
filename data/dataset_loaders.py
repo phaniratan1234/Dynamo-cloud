@@ -313,6 +313,13 @@ class DatasetLoader:
             try:
                 with open(data_path, 'r') as f:
                     data = json.load(f)
+                
+                # Apply configuration size limit
+                max_size = self.dataset_sizes['sentiment']
+                if len(data) > max_size:
+                    data = data[:max_size]
+                    logger.info(f"Limited SST-2 {split} data to {max_size} samples (was {len(json.load(open(data_path)))})")
+                
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load real SST-2 data: {e}")
@@ -345,6 +352,13 @@ class DatasetLoader:
             try:
                 with open(data_path, 'r') as f:
                     data = json.load(f)
+                
+                # Apply configuration size limit
+                max_size = self.dataset_sizes['qa']
+                if len(data) > max_size:
+                    data = data[:max_size]
+                    logger.info(f"Limited SQuAD {split} data to {max_size} samples (was {len(json.load(open(data_path)))})")
+                
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load real SQuAD data: {e}")
@@ -391,6 +405,13 @@ class DatasetLoader:
             try:
                 with open(data_path, 'r') as f:
                     data = json.load(f)
+                
+                # Apply configuration size limit
+                max_size = self.dataset_sizes['summarization']
+                if len(data) > max_size:
+                    data = data[:max_size]
+                    logger.info(f"Limited XSum {split} data to {max_size} samples (was {len(json.load(open(data_path)))})")
+                
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load real XSum data: {e}")
@@ -429,6 +450,13 @@ class DatasetLoader:
             try:
                 with open(data_path, 'r') as f:
                     data = json.load(f)
+                
+                # Apply configuration size limit
+                max_size = self.dataset_sizes['code_generation']
+                if len(data) > max_size:
+                    data = data[:max_size]
+                    logger.info(f"Limited code generation {split} data to {max_size} samples (was {len(json.load(open(data_path)))})")
+                
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load real code generation data: {e}")
@@ -469,6 +497,13 @@ class DatasetLoader:
             try:
                 with open(data_path, 'r') as f:
                     data = json.load(f)
+                
+                # Apply configuration size limit
+                max_size = self.dataset_sizes['translation']
+                if len(data) > max_size:
+                    data = data[:max_size]
+                    logger.info(f"Limited translation {split} data to {max_size} samples (was {len(json.load(open(data_path)))})")
+                
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load real translation data: {e}")

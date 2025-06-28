@@ -65,7 +65,10 @@ class Phase2Trainer:
             self.scaler = None
             logger.info("⚠️  Phase 2 running on CPU - mixed precision disabled")
         
-        # Set model to Phase 2 mode
+        # CRITICAL: Load Phase 1 checkpoints before setting Phase 2 mode
+        self._load_phase1_checkpoints()
+        
+        # Set model to Phase 2 mode (this will freeze the loaded adapters)
         self.model.set_training_phase("phase2")
         self.model.to(self.device)
         
@@ -582,6 +585,84 @@ class Phase2Trainer:
         except Exception as e:
             logger.warning(f"Failed to load Phase 2 checkpoint: {e}")
             return {"status": "failed_to_load"}
+
+    def _load_phase1_checkpoints(self):
+        """Load Phase 1 adapter checkpoints before starting Phase 2."""
+        phase1_dir = os.path.join(self.config.checkpoint_dir, "phase1")
+        
+        # Check if Phase 1 checkpoints exist
+        required_files = [
+            "sentiment_adapter.pt",
+            "qa_adapter.pt", 
+            "summarization_adapter.pt",
+            "code_generation_adapter.pt",
+            "translation_adapter.pt"
+        ]
+        
+        missing_files = []
+        for filename in required_files:
+            if not os.path.exists(os.path.join(phase1_dir, filename)):
+                missing_files.append(filename)
+        
+        if missing_files:
+            logger.error("❌ Phase 1 checkpoints missing! Phase 2 requires trained adapters from Phase 1.")
+            logger.error(f"Missing files: {missing_files}")
+            logger.error("Please complete Phase 1 training first by running:")
+            logger.error("  python train_optimized.py --phase 1")
+            raise FileNotFoundError(f"Phase 1 checkpoints missing: {missing_files}")
+        
+        # Load individual adapter checkpoints
+        logger.info("📂 Loading Phase 1 adapter checkpoints...")
+        adapters_loaded = 0
+        
+        for task_name in self.model.task_names:
+            adapter_path = os.path.join(phase1_dir, f"{task_name}_adapter.pt")
+            
+            try:
+                # Load adapter checkpoint
+                adapter_checkpoint = torch.load(adapter_path, map_location=self.device)
+                
+                # Get the adapter and load its state
+                adapter = self.model.adapters.get_adapter(task_name)
+                adapter.load_state_dict(adapter_checkpoint['adapter_state_dict'])
+                
+                adapters_loaded += 1
+                logger.info(f"  ✅ Loaded {task_name} adapter (epoch {adapter_checkpoint.get('epoch', 'unknown')})")
+                
+            except Exception as e:
+                logger.error(f"  ❌ Failed to load {task_name} adapter: {e}")
+                raise RuntimeError(f"Failed to load {task_name} adapter from {adapter_path}")
+        
+        logger.info(f"🎉 Successfully loaded {adapters_loaded}/{len(self.model.task_names)} Phase 1 adapters!")
+        logger.info("✅ Phase 2 is ready to train the router with frozen, trained adapters")
+        
+        # Verify adapters are properly loaded by checking if they have non-random weights
+        self._verify_adapters_loaded()
+
+    def _verify_adapters_loaded(self):
+        """Verify that adapters have been properly loaded (not random initialization)."""
+        logger.info("🔍 Verifying adapter weights are loaded correctly...")
+        
+        for task_name in self.model.task_names:
+            adapter = self.model.adapters.get_adapter(task_name)
+            
+            # Check task head weights (should not be near zero if trained)
+            if hasattr(adapter.task_head, '0'):  # Sequential with Linear as first layer
+                first_layer = adapter.task_head[0]
+            elif hasattr(adapter.task_head, 'weight'):  # Direct Linear layer
+                first_layer = adapter.task_head
+            else:
+                continue  # Skip verification for complex heads
+            
+            if hasattr(first_layer, 'weight'):
+                weight_mean = first_layer.weight.data.abs().mean().item()
+                weight_std = first_layer.weight.data.std().item()
+                
+                # Random initialization usually has small variance, trained weights should have more structure
+                if weight_std < 0.01:  # Very small variance suggests untrained
+                    logger.warning(f"⚠️  {task_name} adapter may not be properly trained (low weight variance: {weight_std:.6f})")
+                else:
+                    logger.info(f"  ✅ {task_name} adapter verified (weight std: {weight_std:.4f})")
 
 
 def run_phase2_training(config: Config, model: DynamoModel, resume: bool = True) -> Dict[str, float]:

@@ -1,0 +1,6 @@
+2025-06-28 01:37:52,289 - training.phase3_joint_finetuning - INFO - info:68 - 🚀 Phase 3 GPU optimizations enabled: cuDNN benchmark, mixed precision, expandable segments
+2025-06-28 01:37:52,289 - training.phase3_joint_finetuning - INFO - info:68 - 📂 Loading Phase 2 checkpoint for Phase 3...
+2025-06-28 01:37:52,765 - training.phase3_joint_finetuning - INFO - info:68 - ✅ Loaded Phase 2 checkpoint successfully
+2025-06-28 01:37:52,766 - training.phase3_joint_finetuning - INFO - info:68 -    - Trained router loaded
+2025-06-28 01:37:52,766 - training.phase3_joint_finetuning - INFO - info:68 -    - Trained adapters loaded
+2025-06-28 01:37:52,766 - training.phase3_joint_finetuning - INFO - info:68 - 🚀 Phase 3 ready for joint fine-tuning

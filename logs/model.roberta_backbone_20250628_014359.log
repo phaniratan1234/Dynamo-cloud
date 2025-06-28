@@ -1,0 +1,6 @@
+2025-06-28 01:44:00,107 - model.roberta_backbone - INFO - info:68 - Loading RoBERTa model: roberta-base
+2025-06-28 01:44:00,617 - model.roberta_backbone - INFO - info:68 - Frozen RoBERTa parameters: 0
+2025-06-28 01:44:00,621 - model.roberta_backbone - INFO - info:68 - RoBERTa backbone initialized - Hidden size: 768
+2025-06-28 01:44:01,326 - model.roberta_backbone - INFO - info:68 - Loading RoBERTa model: roberta-base
+2025-06-28 01:44:01,768 - model.roberta_backbone - INFO - info:68 - Frozen RoBERTa parameters: 0
+2025-06-28 01:44:01,768 - model.roberta_backbone - INFO - info:68 - RoBERTa backbone initialized - Hidden size: 768

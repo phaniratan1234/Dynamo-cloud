@@ -1,0 +1,12 @@
+2025-06-28 01:44:00,107 - model.dynamo_model - INFO - info:68 - Initializing DYNAMO model components...
+2025-06-28 01:44:01,036 - model.dynamo_model - INFO - info:68 - DYNAMO model initialized with 142,892,183 total parameters
+2025-06-28 01:44:01,036 - model.dynamo_model - INFO - info:68 -   - Backbone (frozen): 0
+2025-06-28 01:44:01,037 - model.dynamo_model - INFO - info:68 -   - Adapters: 142,365,583
+2025-06-28 01:44:01,037 - model.dynamo_model - INFO - info:68 -   - Router: 526,600
+2025-06-28 01:44:01,037 - model.dynamo_model - INFO - info:68 -   - Tasks: ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']
+2025-06-28 01:44:01,326 - model.dynamo_model - INFO - info:68 - Initializing DYNAMO model components...
+2025-06-28 01:44:02,146 - model.dynamo_model - INFO - info:68 - DYNAMO model initialized with 142,892,183 total parameters
+2025-06-28 01:44:02,147 - model.dynamo_model - INFO - info:68 -   - Backbone (frozen): 0
+2025-06-28 01:44:02,148 - model.dynamo_model - INFO - info:68 -   - Adapters: 142,365,583
+2025-06-28 01:44:02,148 - model.dynamo_model - INFO - info:68 -   - Router: 526,600
+2025-06-28 01:44:02,148 - model.dynamo_model - INFO - info:68 -   - Tasks: ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']

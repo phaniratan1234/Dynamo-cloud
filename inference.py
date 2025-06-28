@@ -173,68 +173,107 @@ def decode_output(predictions: torch.Tensor, task: str) -> str:
         return f"Unknown task output: {predictions.shape}"
 
 def run_inference(model, config_dict: Dict[str, Any], query: str, task: str = None) -> Dict[str, Any]:
-    """Run inference on a single query."""
+    """Run inference on a single query with smart routing."""
     
-    # Auto-detect task if not specified
-    if task is None:
-        task = detect_task_from_query(query)
-        print(f"🔍 Auto-detected task: {task}")
+    # DYNAMO's key feature: Smart routing determines the task automatically
+    # Task parameter is only for comparison/debugging purposes
     
-    # Prepare input
-    inputs = prepare_input(query, task, config_dict)
+    # Prepare input (we'll let the router decide the task)
+    inputs = prepare_input_for_routing(query, config_dict)
     
-    # Run model inference
+    # Run model inference with smart routing
     with torch.no_grad():
-        # Set model to the specified task mode
+        # Set model to inference mode
         if hasattr(model, 'set_training_phase'):
             model.set_training_phase("inference")
         
-        # Forward pass
+        # Forward pass - let the router decide!
         outputs = model(inputs)
         
-        # Get predictions and routing info
-        predictions = outputs.get('predictions', outputs.get('logits'))
+        # Get routing decision
         routing_probs = outputs.get('routing_probs')
-        
-        # Decode output
-        decoded_output = decode_output(predictions, task)
-        
-        # Get routing information
-        routing_info = {}
         if routing_probs is not None:
             task_names = ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']
             routing_probs_np = routing_probs[0].cpu().numpy()
+            predicted_task = task_names[routing_probs_np.argmax()]
+            confidence = float(routing_probs_np.max())
             
+            print(f"🤖 DYNAMO Router Decision: {predicted_task} (confidence: {confidence:.3f})")
+        else:
+            # Fallback to heuristic detection if routing fails
+            predicted_task = detect_task_from_query(query) if task is None else task
+            confidence = 0.5
+            print(f"🔍 Fallback task detection: {predicted_task}")
+        
+        # Use router's decision (or provided task for comparison)
+        final_task = task if task is not None else predicted_task
+        
+        # Get predictions for the determined task
+        predictions = outputs.get('predictions', outputs.get('logits'))
+        decoded_output = decode_output(predictions, final_task)
+        
+        # Routing information
+        routing_info = {}
+        if routing_probs is not None:
             routing_info = {
-                'predicted_task': task_names[routing_probs_np.argmax()],
-                'confidence': float(routing_probs_np.max()),
-                'all_scores': {task_names[i]: float(routing_probs_np[i]) for i in range(len(task_names))}
+                'predicted_task': predicted_task,
+                'confidence': confidence,
+                'all_scores': {task_names[i]: float(routing_probs_np[i]) for i in range(len(task_names))},
+                'user_override': task is not None
             }
     
     return {
         'query': query,
-        'task': task,
+        'task': final_task,
+        'predicted_task': predicted_task,
         'prediction': decoded_output,
         'routing': routing_info
     }
 
+def prepare_input_for_routing(query: str, config_dict: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    """Prepare input for smart routing (no task specified)."""
+    from transformers import RobertaTokenizer
+    
+    tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+    max_length = config_dict.get('model', {}).get('max_sequence_length', 512)
+    
+    # For smart routing, we encode the raw query and let the router decide
+    encoding = tokenizer(
+        query,
+        max_length=max_length,
+        padding='max_length',
+        truncation=True,
+        return_tensors='pt'
+    )
+    
+    return {
+        'input_ids': encoding['input_ids'],
+        'attention_mask': encoding['attention_mask'],
+        'task_name': None  # Let the router decide!
+    }
+
 def interactive_inference():
-    """Run interactive inference session."""
+    """Run interactive inference session with smart routing."""
     print("🚀 DYNAMO Interactive Inference")
     print("=" * 50)
+    print("✨ Smart Multi-Task AI - Just type your query!")
+    print("🤖 DYNAMO will automatically detect the task and route to the best adapter")
+    print()
     
     # Load model
     model, config_dict = load_trained_model()
     
-    print("\n💡 Available tasks:")
-    print("  - sentiment: Analyze text sentiment")
-    print("  - qa: Answer questions (format: 'question context: your context')")
-    print("  - summarization: Summarize long text")
-    print("  - code_generation: Generate code")
-    print("  - translation: Translate text")
-    print("  - auto: Auto-detect task (default)")
-    
-    print("\n📝 Enter your queries (type 'quit' to exit):")
+    print("💡 DYNAMO handles these tasks automatically:")
+    print("  🎭 Sentiment Analysis - Express opinions, reviews")
+    print("  ❓ Question Answering - Ask questions with context")
+    print("  📝 Text Summarization - Provide long text to summarize")
+    print("  💻 Code Generation - Request programming help")
+    print("  🌍 Translation - Text in other languages")
+    print()
+    print("🎯 Optional: Force a specific task with [task] prefix:")
+    print("   Example: [sentiment] This movie is great!")
+    print()
+    print("📝 Enter your queries (type 'quit' to exit):")
     print("-" * 50)
     
     while True:
@@ -249,28 +288,34 @@ def interactive_inference():
             if not query:
                 continue
             
-            # Check if user specified a task
-            task = None
+            # Check if user forced a specific task
+            task_override = None
             if query.startswith('[') and ']' in query:
                 task_end = query.index(']')
-                task = query[1:task_end].strip()
+                task_override = query[1:task_end].strip()
                 query = query[task_end+1:].strip()
+                print(f"🎯 Task override: {task_override}")
             
-            # Run inference
-            result = run_inference(model, config_dict, query, task)
+            # Run inference with smart routing
+            result = run_inference(model, config_dict, query, task_override)
             
             # Display results
             print(f"\n📊 Results:")
-            print(f"   Task: {result['task']}")
             print(f"   Prediction: {result['prediction']}")
             
             if result['routing']:
                 routing = result['routing']
-                print(f"   Router prediction: {routing['predicted_task']} ({routing['confidence']:.3f})")
                 
-                print("   Task scores:")
+                if routing.get('user_override'):
+                    print(f"   📌 Used task: {result['task']} (overridden)")
+                    print(f"   🤖 Router would have chosen: {routing['predicted_task']} ({routing['confidence']:.3f})")
+                else:
+                    print(f"   🤖 Router decision: {routing['predicted_task']} ({routing['confidence']:.3f})")
+                
+                print("   📊 All task scores:")
                 for task_name, score in routing['all_scores'].items():
-                    print(f"     {task_name}: {score:.3f}")
+                    indicator = "👑" if task_name == routing['predicted_task'] else "  "
+                    print(f"     {indicator} {task_name}: {score:.3f}")
         
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
@@ -306,8 +351,8 @@ def batch_inference(input_file: str, output_file: str, task: str = None):
     print(f"✅ Saved {len(results)} results to {output_file}")
 
 def main():
-    """Main inference function."""
-    parser = argparse.ArgumentParser(description="DYNAMO Model Inference")
+    """Main inference function emphasizing smart routing."""
+    parser = argparse.ArgumentParser(description="DYNAMO Smart Multi-Task Inference")
     parser.add_argument(
         "--mode",
         choices=['interactive', 'batch'],
@@ -325,9 +370,9 @@ def main():
         help="Output file for batch inference"
     )
     parser.add_argument(
-        "--task",
+        "--force-task",
         choices=['sentiment', 'qa', 'summarization', 'code_generation', 'translation'],
-        help="Force specific task (otherwise auto-detect)"
+        help="Override smart routing with specific task (for testing/comparison)"
     )
     parser.add_argument(
         "--query",
@@ -339,21 +384,28 @@ def main():
     
     if args.query:
         # Single query mode
-        model, config_dict = load_trained_model()
-        result = run_inference(model, config_dict, args.query, args.task)
+        print("🚀 DYNAMO Smart Inference")
+        print("=" * 40)
         
-        print("\n📊 Result:")
-        print(f"Query: {result['query']}")
-        print(f"Task: {result['task']}")
-        print(f"Prediction: {result['prediction']}")
+        model, config_dict = load_trained_model()
+        result = run_inference(model, config_dict, args.query, args.force_task)
+        
+        print(f"\n📝 Query: {result['query']}")
+        print(f"🎯 Result: {result['prediction']}")
+        
         if result['routing']:
-            print(f"Router: {result['routing']['predicted_task']} ({result['routing']['confidence']:.3f})")
+            routing = result['routing']
+            if routing.get('user_override'):
+                print(f"📌 Forced task: {result['task']}")
+                print(f"🤖 Router suggestion: {routing['predicted_task']} ({routing['confidence']:.3f})")
+            else:
+                print(f"🤖 Smart routing: {routing['predicted_task']} ({routing['confidence']:.3f})")
     
     elif args.mode == 'batch':
         if not args.input or not args.output:
             print("❌ Batch mode requires --input and --output arguments")
             return
-        batch_inference(args.input, args.output, args.task)
+        batch_inference(args.input, args.output, args.force_task)
     
     else:
         # Interactive mode

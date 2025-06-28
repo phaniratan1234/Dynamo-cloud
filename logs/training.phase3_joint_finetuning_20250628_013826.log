@@ -1,0 +1,7 @@
+2025-06-28 01:38:28,531 - training.phase3_joint_finetuning - INFO - info:68 - ⚠️  Phase 3 running on CPU - mixed precision disabled
+2025-06-28 01:38:28,531 - training.phase3_joint_finetuning - INFO - info:68 - 📂 Loading Phase 2 checkpoint for Phase 3...
+2025-06-28 01:38:29,133 - training.phase3_joint_finetuning - INFO - info:68 - ✅ Loaded Phase 2 checkpoint successfully
+2025-06-28 01:38:29,133 - training.phase3_joint_finetuning - INFO - info:68 -    - Trained router loaded
+2025-06-28 01:38:29,133 - training.phase3_joint_finetuning - INFO - info:68 -    - Trained adapters loaded
+2025-06-28 01:38:29,133 - training.phase3_joint_finetuning - INFO - info:68 - 🚀 Phase 3 ready for joint fine-tuning
+2025-06-28 01:38:29,281 - training.phase3_joint_finetuning - INFO - info:68 - Phase 3 trainer initialized

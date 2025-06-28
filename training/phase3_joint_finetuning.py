@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
+from torch.amp import autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any, Tuple
 import os
@@ -56,14 +57,21 @@ class Phase3Trainer:
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.enabled = True
             
+            # Memory optimization for T4
+            import os
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+            
             # Enable mixed precision training
             self.use_amp = True
-            self.scaler = GradScaler()
-            logger.info("🚀 Phase 3 GPU optimizations enabled: cuDNN benchmark, mixed precision")
+            self.scaler = GradScaler('cuda')
+            logger.info("🚀 Phase 3 GPU optimizations enabled: cuDNN benchmark, mixed precision, expandable segments")
         else:
             self.use_amp = False
             self.scaler = None
             logger.info("⚠️  Phase 3 running on CPU - mixed precision disabled")
+        
+        # CRITICAL: Load Phase 2 checkpoint before setting Phase 3 mode
+        self._load_phase2_checkpoint()
         
         # Set model to Phase 3 mode
         self.model.set_training_phase("phase3")
@@ -705,18 +713,39 @@ class Phase3Trainer:
         checkpoint_dir = os.path.join(self.config.checkpoint_dir, "phase3")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
+        # Convert config to serializable format
+        config_dict = self._config_to_dict(self.config)
+        
         checkpoint = {
             'epoch': epoch,
             'val_loss': val_loss,
             'metrics': metrics,
             'model_state_dict': self.model.state_dict(),
-            'config': self.config.__dict__
+            'config': config_dict
         }
         
         checkpoint_path = os.path.join(checkpoint_dir, "best_joint_model.pt")
         torch.save(checkpoint, checkpoint_path)
         
         logger.info(f"Saved joint checkpoint to {checkpoint_path}")
+    
+    def _config_to_dict(self, config) -> dict:
+        """Convert config object to serializable dictionary."""
+        if hasattr(config, '__dict__'):
+            result = {}
+            for key, value in config.__dict__.items():
+                if hasattr(value, '__dict__'):
+                    # Recursively convert nested config objects
+                    result[key] = self._config_to_dict(value)
+                elif isinstance(value, (str, int, float, bool, list, tuple)):
+                    # Keep simple types
+                    result[key] = value
+                else:
+                    # Convert other objects to string representation
+                    result[key] = str(value)
+            return result
+        else:
+            return str(config)
     
     def _save_phase3_checkpoint(self, metrics: Dict[str, Any]):
         """Save complete Phase 3 checkpoint."""
@@ -750,6 +779,35 @@ class Phase3Trainer:
                 wandb_metrics[f"phase3/{key}"] = value
         
         wandb.log(wandb_metrics, step=self.global_step)
+
+    def _load_phase2_checkpoint(self):
+        """Load Phase 2 checkpoint before starting Phase 3."""
+        phase2_dir = os.path.join(self.config.checkpoint_dir, "phase2")
+        checkpoint_path = os.path.join(phase2_dir, "phase2_model.pt")
+        
+        if not os.path.exists(checkpoint_path):
+            logger.error(f"❌ Phase 2 checkpoint not found: {checkpoint_path}")
+            logger.error("Phase 3 requires a trained router from Phase 2.")
+            logger.error("Please complete Phase 2 training first by running:")
+            logger.error("  python train_optimized.py --phase 2")
+            raise FileNotFoundError(f"Phase 2 checkpoint not found: {checkpoint_path}")
+        
+        try:
+            logger.info("📂 Loading Phase 2 checkpoint for Phase 3...")
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            
+            # Load the complete model state (includes trained router + adapters)
+            self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            
+            logger.info("✅ Loaded Phase 2 checkpoint successfully")
+            logger.info("   - Trained router loaded")
+            logger.info("   - Trained adapters loaded")
+            logger.info("🚀 Phase 3 ready for joint fine-tuning")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load Phase 2 checkpoint: {e}")
+            logger.error("Please ensure Phase 2 training completed successfully.")
+            raise RuntimeError(f"Failed to load Phase 2 checkpoint: {e}")
 
     def _check_phase3_checkpoint(self) -> bool:
         """Check if Phase 3 checkpoint exists."""

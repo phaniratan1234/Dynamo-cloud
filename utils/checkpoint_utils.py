@@ -209,18 +209,21 @@ def validate_checkpoint_transition(from_phase: int, to_phase: int, checkpoint_di
         return True
         
     elif to_phase == 3:
-        # Phase 3 requires Phase 2 completion
-        phase1_complete, _, _ = check_phase1_completion(checkpoint_dir)
+        # Phase 3 requires Phase 1 adapters and Phase 2 completion
+        adapters_ready, missing_adapters = check_phase1_adapters_for_phase2(checkpoint_dir)
         phase2_complete, missing2 = check_phase2_completion(checkpoint_dir)
         
-        if not phase1_complete:
-            logger.error("❌ Cannot start Phase 3: Phase 1 incomplete")
+        if not adapters_ready:
+            logger.error(f"❌ Cannot start Phase 3: Missing trained adapters from Phase 1: {missing_adapters}")
+            logger.error("Phase 3 requires trained adapters from Phase 1.")
             return False
             
         if not phase2_complete:
             logger.error(f"❌ Cannot start Phase 3: Phase 2 incomplete. Missing: {missing2}")
+            logger.error("Phase 3 requires a trained router from Phase 2.")
             return False
-            
+        
+        logger.info("✅ Phase 1 adapters and Phase 2 router found - Phase 3 can proceed with joint training")
         return True
         
     else:

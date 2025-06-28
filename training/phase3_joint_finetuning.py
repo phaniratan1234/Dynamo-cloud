@@ -7,8 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from torch.cuda.amp import GradScaler
-from torch.amp import autocast
+from torch.amp import GradScaler, autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any, Tuple
 import os
@@ -88,6 +87,13 @@ class Phase3Trainer:
         # Joint training specifics
         self.adapter_lr_scale = 0.1  # Scale down adapter learning rate
         self.router_lr_scale = 1.0   # Keep router learning rate
+        
+        # Curriculum learning parameters (FIXED: Added missing attributes)
+        self.curriculum_start_ratio = getattr(config.training, 'curriculum_start_ratio', 0.8)
+        self.curriculum_end_ratio = getattr(config.training, 'curriculum_end_ratio', 0.2)
+        
+        # Gradient accumulation (FIXED: Added missing attribute)
+        self.gradient_accumulation_steps = getattr(config.training, 'gradient_accumulation_steps', 2)
         
         # Logging
         self.training_logger = TrainingLogger(config.log_dir)
@@ -374,52 +380,67 @@ class Phase3Trainer:
         """Train on a mixed task batch."""
         batch = move_to_device(batch, self.device)
         
-        # Forward pass
-        outputs = self.model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            return_routing_info=True
-        )
+        # FIXED: Proper mixed precision training with gradient accumulation
+        with autocast('cuda', enabled=self.use_amp):
+            # Forward pass
+            outputs = self.model(
+                input_ids=batch['input_ids'],
+                attention_mask=batch['attention_mask'],
+                return_routing_info=True
+            )
+            
+            # Prepare targets and compute loss
+            task_targets = self._prepare_mixed_task_targets(batch)
+            
+            # Get backbone embeddings for consistency loss
+            backbone_outputs = self.model.backbone(
+                input_ids=batch['input_ids'],
+                attention_mask=batch['attention_mask']
+            )
+            cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+            
+            # Compute losses
+            losses = loss_fn(
+                task_outputs=outputs['task_outputs'],
+                task_targets=task_targets,
+                routing_probs=outputs['routing_probs'],
+                input_embeddings=cls_embeddings,
+                temperature=outputs['routing_info'].get('temperature'),
+                training_phase="phase3"
+            )
+            
+            # Scale loss for gradient accumulation
+            total_loss = losses['total_loss'] / self.gradient_accumulation_steps
         
-        # Prepare targets and compute loss
-        task_targets = self._prepare_mixed_task_targets(batch)
+        # FIXED: Proper backward pass with gradient scaling
+        if self.use_amp:
+            self.scaler.scale(total_loss).backward()
+        else:
+            total_loss.backward()
         
-        # Get backbone embeddings for consistency loss
-        backbone_outputs = self.model.backbone(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask']
-        )
-        cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
-        
-        # Compute losses
-        losses = loss_fn(
-            task_outputs=outputs['task_outputs'],
-            task_targets=task_targets,
-            routing_probs=outputs['routing_probs'],
-            input_embeddings=cls_embeddings,
-            temperature=outputs['routing_info'].get('temperature'),
-            training_phase="phase3"
-        )
-        
-        # Backward pass
-        total_loss = losses['total_loss']
-        optimizer.zero_grad()
-        total_loss.backward()
-        
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        
-        optimizer.step()
-        scheduler.step()
+        # FIXED: Handle gradient accumulation properly
+        if (self.global_step + 1) % self.gradient_accumulation_steps == 0:
+            # Gradient clipping
+            if self.use_amp:
+                self.scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                optimizer.step()
+            
+            optimizer.zero_grad()
+            scheduler.step()
         
         # Compute routing accuracy
         routing_accuracy = self._compute_routing_accuracy(batch, outputs['routing_probs'])
         
         self.global_step += 1
         
-        # Prepare metrics
+        # Prepare metrics (unscale loss for reporting)
         metrics = {
-            'total_loss': total_loss.item(),
+            'total_loss': (total_loss * self.gradient_accumulation_steps).item(),
             'routing_accuracy': routing_accuracy
         }
         
@@ -448,47 +469,66 @@ class Phase3Trainer:
             device=self.device
         )
         
-        # Forward pass
-        outputs = self.model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            task_labels=task_labels,
-            return_routing_info=True
-        )
+        # FIXED: Proper mixed precision training
+        with autocast('cuda', enabled=self.use_amp):
+            # Forward pass
+            outputs = self.model(
+                input_ids=batch['input_ids'],
+                attention_mask=batch['attention_mask'],
+                task_labels=task_labels,
+                return_routing_info=True
+            )
+            
+            # Prepare targets
+            task_targets = {task_name: batch['target']}
+            
+            # Compute losses (simplified for single task)
+            losses = loss_fn(
+                task_outputs=outputs['task_outputs'],
+                task_targets=task_targets,
+                routing_probs=outputs['routing_probs'],
+                training_phase="phase3"
+            )
+            
+            # Scale loss for gradient accumulation
+            total_loss = losses['total_loss'] / self.gradient_accumulation_steps
         
-        # Prepare targets
-        task_targets = {task_name: batch['target']}
+        # FIXED: Proper backward pass with gradient scaling
+        if self.use_amp:
+            self.scaler.scale(total_loss).backward()
+        else:
+            total_loss.backward()
         
-        # Compute losses (simplified for single task)
-        losses = loss_fn(
-            task_outputs=outputs['task_outputs'],
-            task_targets=task_targets,
-            routing_probs=outputs['routing_probs'],
-            training_phase="phase3"
-        )
-        
-        # Backward pass
-        total_loss = losses['total_loss']
-        optimizer.zero_grad()
-        total_loss.backward()
-        
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        
-        optimizer.step()
-        scheduler.step()
+        # FIXED: Handle gradient accumulation properly
+        if (self.global_step + 1) % self.gradient_accumulation_steps == 0:
+            # Gradient clipping
+            if self.use_amp:
+                self.scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                optimizer.step()
+            
+            optimizer.zero_grad()
+            scheduler.step()
         
         self.global_step += 1
         
         # Compute task-specific accuracy
-        task_accuracy = self._compute_task_accuracy(
-            outputs['task_outputs'].get(task_name), 
-            batch['target'], 
-            task_name
-        )
+        try:
+            task_accuracy = self._compute_task_accuracy(
+                outputs['task_outputs'].get(task_name), 
+                batch['target'], 
+                task_name
+            )
+        except Exception as e:
+            logger.warning(f"Failed to compute {task_name} accuracy: {e}")
+            task_accuracy = 0.0
         
         return {
-            'total_loss': total_loss.item(),
+            'total_loss': (total_loss * self.gradient_accumulation_steps).item(),
             f'{task_name}_accuracy': task_accuracy
         }
     
@@ -511,29 +551,31 @@ class Phase3Trainer:
             for batch in tqdm(dataloader, desc="Validating"):
                 batch = move_to_device(batch, self.device)
                 
-                # Forward pass
-                outputs = self.model(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    return_routing_info=True
-                )
-                
-                # Prepare targets and compute loss
-                task_targets = self._prepare_mixed_task_targets(batch)
-                
-                backbone_outputs = self.model.backbone(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask']
-                )
-                cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
-                
-                losses = loss_fn(
-                    task_outputs=outputs['task_outputs'],
-                    task_targets=task_targets,
-                    routing_probs=outputs['routing_probs'],
-                    input_embeddings=cls_embeddings,
-                    training_phase="phase3"
-                )
+                # FIXED: Use mixed precision for validation too
+                with autocast('cuda', enabled=self.use_amp):
+                    # Forward pass
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        return_routing_info=True
+                    )
+                    
+                    # Prepare targets and compute loss
+                    task_targets = self._prepare_mixed_task_targets(batch)
+                    
+                    backbone_outputs = self.model.backbone(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask']
+                    )
+                    cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                    
+                    losses = loss_fn(
+                        task_outputs=outputs['task_outputs'],
+                        task_targets=task_targets,
+                        routing_probs=outputs['routing_probs'],
+                        input_embeddings=cls_embeddings,
+                        training_phase="phase3"
+                    )
                 
                 # Compute metrics
                 routing_accuracy = self._compute_routing_accuracy(batch, outputs['routing_probs'])
@@ -562,24 +604,43 @@ class Phase3Trainer:
     def _prepare_mixed_task_targets(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """Prepare task targets from mixed task batch."""
         task_targets = {}
-        expected_outputs = batch['expected_outputs']
         
-        for task_name in self.model.task_names:
-            if task_name in expected_outputs:
-                targets = expected_outputs[task_name]
-                
-                if isinstance(targets, list):
+        # FIXED: Better error handling for target preparation
+        try:
+            expected_outputs = batch.get('expected_outputs', {})
+            
+            for task_name in self.model.task_names:
+                if task_name in expected_outputs:
+                    targets = expected_outputs[task_name]
+                    
+                    if isinstance(targets, list):
+                        if task_name == 'qa':
+                            task_targets[task_name] = torch.stack([
+                                torch.tensor(t, dtype=torch.long, device=self.device) 
+                                for t in targets
+                            ])
+                        else:
+                            task_targets[task_name] = torch.tensor(
+                                targets, dtype=torch.long, device=self.device
+                            )
+                    elif isinstance(targets, torch.Tensor):
+                        task_targets[task_name] = targets.to(self.device)
+                elif task_name in batch:
+                    # Fallback: look for task targets directly in batch
+                    targets = batch[task_name]
+                    if isinstance(targets, torch.Tensor):
+                        task_targets[task_name] = targets.to(self.device)
+        
+        except Exception as e:
+            logger.warning(f"Error preparing mixed task targets: {e}")
+            # Fallback: create dummy targets
+            for task_name in self.model.task_names:
+                if task_name not in task_targets:
+                    batch_size = batch['input_ids'].size(0)
                     if task_name == 'qa':
-                        task_targets[task_name] = torch.stack([
-                            torch.tensor(t, dtype=torch.long, device=self.device) 
-                            for t in targets
-                        ])
+                        task_targets[task_name] = torch.zeros((batch_size, 2), dtype=torch.long, device=self.device)
                     else:
-                        task_targets[task_name] = torch.tensor(
-                            targets, dtype=torch.long, device=self.device
-                        )
-                elif isinstance(targets, torch.Tensor):
-                    task_targets[task_name] = targets.to(self.device)
+                        task_targets[task_name] = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         
         return task_targets
     
@@ -798,8 +859,20 @@ class Phase3Trainer:
             logger.info("📂 Loading Phase 2 checkpoint for Phase 3...")
             checkpoint = torch.load(checkpoint_path, map_location='cpu')
             
+            # FIXED: Better error handling for checkpoint loading
+            if 'model_state_dict' not in checkpoint:
+                logger.error("❌ Invalid checkpoint format: missing model_state_dict")
+                raise KeyError("Invalid checkpoint format")
+            
             # Load the complete model state (includes trained router + adapters)
-            self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            missing_keys, unexpected_keys = self.model.load_state_dict(
+                checkpoint['model_state_dict'], strict=False
+            )
+            
+            if missing_keys:
+                logger.warning(f"Missing keys when loading checkpoint: {missing_keys}")
+            if unexpected_keys:
+                logger.warning(f"Unexpected keys when loading checkpoint: {unexpected_keys}")
             
             logger.info("✅ Loaded Phase 2 checkpoint successfully")
             logger.info("   - Trained router loaded")

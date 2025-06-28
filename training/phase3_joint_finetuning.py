@@ -404,6 +404,8 @@ class Phase3Trainer:
                 task_outputs=outputs['task_outputs'],
                 task_targets=task_targets,
                 routing_probs=outputs['routing_probs'],
+                routing_logits=outputs['routing_info'].get('routing_logits', outputs['routing_probs']),  # FIXED: Get routing logits from routing_info
+                true_task_labels=batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device)),  # FIXED: Added missing parameter
                 input_embeddings=cls_embeddings,
                 temperature=outputs['routing_info'].get('temperature'),
                 training_phase="phase3"
@@ -482,11 +484,13 @@ class Phase3Trainer:
             # Prepare targets
             task_targets = {task_name: batch['target']}
             
-            # Compute losses (simplified for single task)
+                        # Compute losses (simplified for single task)
             losses = loss_fn(
                 task_outputs=outputs['task_outputs'],
                 task_targets=task_targets,
                 routing_probs=outputs['routing_probs'],
+                routing_logits=outputs['routing_info'].get('routing_logits', outputs['routing_probs']),  # FIXED: Get routing logits from routing_info
+                true_task_labels=task_labels,  # FIXED: Use the task labels we created
                 training_phase="phase3"
             )
             
@@ -573,6 +577,8 @@ class Phase3Trainer:
                         task_outputs=outputs['task_outputs'],
                         task_targets=task_targets,
                         routing_probs=outputs['routing_probs'],
+                        routing_logits=outputs['routing_info'].get('routing_logits', outputs['routing_probs']),  # FIXED: Get routing logits from routing_info
+                        true_task_labels=batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device)),  # FIXED: Added missing parameter
                         input_embeddings=cls_embeddings,
                         training_phase="phase3"
                     )

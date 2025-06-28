@@ -26,6 +26,25 @@ from gpu_monitor import GPUMonitor, check_gpu_optimization
 
 logger = get_logger(__name__)
 
+
+class SimpleConfig:
+    """Simple configuration class that's pickle-able."""
+    def __init__(self, config_dict):
+        for key, value in config_dict.items():
+            if isinstance(value, dict):
+                setattr(self, key, SimpleConfig(value))
+            else:
+                setattr(self, key, value)
+    
+    def __getstate__(self):
+        """Support pickling."""
+        return self.__dict__
+    
+    def __setstate__(self, state):
+        """Support unpickling."""
+        self.__dict__.update(state)
+
+
 def setup_gpu_optimizations():
     """Setup comprehensive GPU optimizations."""
     print("🚀 Setting up GPU optimizations...")
@@ -104,15 +123,7 @@ def load_optimized_config(config_path: str) -> tuple:
         print(f"   - Pin memory: {training_config['pin_memory']}")
         print(f"   - Gradient accumulation: {training_config.get('gradient_accumulation_steps', 1)}")
     
-    # Create a simple Config-like object
-    class SimpleConfig:
-        def __init__(self, config_dict):
-            for key, value in config_dict.items():
-                if isinstance(value, dict):
-                    setattr(self, key, SimpleConfig(value))
-                else:
-                    setattr(self, key, value)
-    
+    # Create a simple Config-like object using the module-level SimpleConfig class
     config_obj = SimpleConfig(config_dict)
     
     return config_dict, config_obj

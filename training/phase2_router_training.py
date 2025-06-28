@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
+from torch.amp import autocast
 from transformers import get_linear_schedule_with_warmup
 from typing import Dict, List, Optional, Any
 import os
@@ -298,7 +299,7 @@ class Phase2Trainer:
             gradient_accumulation_steps = getattr(self.config.training, 'gradient_accumulation_steps', 1)
             
             if self.use_amp:
-                with autocast():
+                with autocast('cuda'):
                     outputs = self.model(
                         input_ids=batch['input_ids'],
                         attention_mask=batch['attention_mask'],
@@ -492,7 +493,7 @@ class Phase2Trainer:
                 
                 # Forward pass
                 if self.use_amp:
-                    with autocast():
+                    with autocast('cuda'):
                         outputs = self.model(
                             input_ids=batch['input_ids'],
                             attention_mask=batch['attention_mask'],
@@ -742,12 +743,15 @@ class Phase2Trainer:
         checkpoint_dir = os.path.join(self.config.checkpoint_dir, "phase2")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
+        # Convert config to serializable format
+        config_dict = self._config_to_dict(self.config)
+        
         checkpoint = {
             'epoch': epoch,
             'val_loss': val_loss,
             'metrics': metrics,
             'router_state_dict': self.model.router.state_dict(),
-            'config': self.config.__dict__
+            'config': config_dict
         }
         
         checkpoint_path = os.path.join(checkpoint_dir, "best_router.pt")
@@ -760,11 +764,14 @@ class Phase2Trainer:
         checkpoint_dir = os.path.join(self.config.checkpoint_dir, "phase2")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
+        # Convert config to serializable format
+        config_dict = self._config_to_dict(self.config)
+        
         # Save complete model state
         model_path = os.path.join(checkpoint_dir, "phase2_model.pt")
         torch.save({
             'model_state_dict': self.model.state_dict(),
-            'config': self.config.__dict__,
+            'config': config_dict,
             'metrics': metrics
         }, model_path)
         
@@ -773,6 +780,24 @@ class Phase2Trainer:
         torch.save(metrics, metrics_path)
         
         logger.info(f"Saved Phase 2 checkpoint to {checkpoint_dir}")
+    
+    def _config_to_dict(self, config) -> dict:
+        """Convert config object to serializable dictionary."""
+        if hasattr(config, '__dict__'):
+            result = {}
+            for key, value in config.__dict__.items():
+                if hasattr(value, '__dict__'):
+                    # Recursively convert nested config objects
+                    result[key] = self._config_to_dict(value)
+                elif isinstance(value, (str, int, float, bool, list, tuple)):
+                    # Keep simple types
+                    result[key] = value
+                else:
+                    # Convert other objects to string representation
+                    result[key] = str(value)
+            return result
+        else:
+            return str(config)
     
     def _log_wandb_metrics(self, metrics: Dict[str, float]):
         """Log metrics to Weights & Biases."""

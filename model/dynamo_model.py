@@ -180,7 +180,8 @@ class DynamoModel(nn.Module):
         # Prepare output
         output = {
             'task_outputs': task_outputs,
-            'routing_probs': routing_probs
+            'routing_probs': routing_probs,
+            'cls_embeddings': cls_embeddings  # Include CLS embeddings to avoid duplicate forward pass
         }
         
         if return_routing_info:

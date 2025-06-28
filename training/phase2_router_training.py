@@ -63,10 +63,14 @@ class Phase2Trainer:
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.enabled = True
             
+            # Memory optimization for T4
+            import os
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+            
             # Enable mixed precision training
             self.use_amp = True
             self.scaler = GradScaler()
-            logger.info("🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision")
+            logger.info("🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision, expandable segments")
         else:
             self.use_amp = False
             self.scaler = None
@@ -290,7 +294,9 @@ class Phase2Trainer:
         for batch_idx, batch in enumerate(progress_bar):
             batch = move_to_device(batch, self.device)
             
-            # Forward pass
+            # Forward pass with gradient accumulation
+            gradient_accumulation_steps = getattr(self.config.training, 'gradient_accumulation_steps', 1)
+            
             if self.use_amp:
                 with autocast():
                     outputs = self.model(
@@ -309,12 +315,16 @@ class Phase2Trainer:
                     # Filter task outputs to match available targets
                     filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
                     
-                    # Get backbone embeddings for consistency loss
-                    backbone_outputs = self.model.backbone(
-                        input_ids=batch['input_ids'],
-                        attention_mask=batch['attention_mask']
-                    )
-                    cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                    # Use embeddings from model output instead of separate forward pass
+                    cls_embeddings = outputs.get('cls_embeddings')
+                    if cls_embeddings is None:
+                        # Fallback: get embeddings efficiently
+                        with torch.no_grad():
+                            backbone_outputs = self.model.backbone(
+                                input_ids=batch['input_ids'],
+                                attention_mask=batch['attention_mask']
+                            )
+                            cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :].detach()
                     
                     # Compute losses with supervised router training
                     losses = loss_fn(
@@ -328,22 +338,25 @@ class Phase2Trainer:
                         training_phase="phase2"
                     )
                     
-                total_loss = losses['total_loss']
+                # Scale loss by gradient accumulation steps
+                total_loss = losses['total_loss'] / gradient_accumulation_steps
                     
-                # Backward pass
-                optimizer.zero_grad()
+                # Backward pass with gradient accumulation
                 self.scaler.scale(total_loss).backward()
-                    
+                
+                # Only step optimizer every N batches
+                if (batch_idx + 1) % gradient_accumulation_steps == 0:
                     # Gradient clipping with scaling
-                self.scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.router.parameters(),
-                    max_norm=1.0
+                    self.scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.router.parameters(),
+                        max_norm=1.0
                     )
                     
-                self.scaler.step(optimizer)
-                self.scaler.update()
-                scheduler.step()
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
+                    scheduler.step()
+                    optimizer.zero_grad()
             else:
                 # Standard forward pass (for CPU)
                 outputs = self.model(
@@ -362,12 +375,16 @@ class Phase2Trainer:
                 # Filter task outputs to match available targets
                 filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
                 
-                # Get backbone embeddings for consistency loss
-                backbone_outputs = self.model.backbone(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask']
-                )
-                cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                # Use embeddings from model output instead of separate forward pass
+                cls_embeddings = outputs.get('cls_embeddings')
+                if cls_embeddings is None:
+                    # Fallback: get embeddings efficiently
+                    with torch.no_grad():
+                        backbone_outputs = self.model.backbone(
+                            input_ids=batch['input_ids'],
+                            attention_mask=batch['attention_mask']
+                        )
+                        cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :].detach()
                 
                 # Compute losses with supervised router training
                 losses = loss_fn(
@@ -381,27 +398,31 @@ class Phase2Trainer:
                     training_phase="phase2"
                 )
                 
-                total_loss = losses['total_loss']
+                # Scale loss by gradient accumulation steps
+                total_loss = losses['total_loss'] / gradient_accumulation_steps
                 
-                # Backward pass
-                optimizer.zero_grad()
+                # Backward pass with gradient accumulation
                 total_loss.backward()
                 
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.router.parameters(),
-                    max_norm=1.0
-                )
-                
-                optimizer.step()
-                scheduler.step()
+                # Only step optimizer every N batches
+                if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.router.parameters(),
+                        max_norm=1.0
+                    )
+                    
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
             
             # Compute routing accuracy
             routing_accuracy = self._compute_routing_accuracy(batch, routing_probs)
             
-            # Update metrics
+            # Update metrics (scale back the loss for logging)
             batch_size = batch['input_ids'].size(0)
-            loss_meters['train_loss'].update(total_loss.item(), batch_size)
+            actual_loss = total_loss.item() * gradient_accumulation_steps
+            loss_meters['train_loss'].update(actual_loss, batch_size)
             loss_meters['routing_accuracy'].update(routing_accuracy, batch_size)
             
             for loss_name, loss_value in losses.items():
@@ -413,19 +434,41 @@ class Phase2Trainer:
             # Logging
             if self.global_step % self.config.evaluation.logging_steps == 0:
                 self.training_logger.log_step(
-                    total_loss.item(),
+                    actual_loss,
                     scheduler.get_last_lr()[0],
                     routing_accuracy=routing_accuracy,
                     temperature=self.model.router.get_temperature()
                 )
+            
+            # Memory cleanup every few steps
+            if batch_idx % 10 == 0 and torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             # Update progress bar
             progress_bar.set_postfix({
                 'loss': f"{loss_meters['train_loss'].avg:.4f}",
                 'acc': f"{loss_meters['routing_accuracy'].avg:.3f}",
                 'temp': f"{self.model.router.get_temperature():.3f}",
-                'lr': f"{scheduler.get_last_lr()[0]:.2e}"
+                'lr': f"{scheduler.get_last_lr()[0]:.2e}",
+                'mem': f"{torch.cuda.memory_reserved()/1024**3:.1f}GB" if torch.cuda.is_available() else "N/A"
             })
+        
+        # Handle any remaining gradients at the end of epoch
+        if len(dataloader) % gradient_accumulation_steps != 0:
+            if self.use_amp:
+                self.scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.router.parameters(), max_norm=1.0)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+                optimizer.zero_grad()
+            else:
+                torch.nn.utils.clip_grad_norm_(self.model.router.parameters(), max_norm=1.0)
+                optimizer.step()
+                optimizer.zero_grad()
+        
+        # Final memory cleanup
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         # Return epoch metrics
         return {key: meter.avg for key, meter in loss_meters.items()}

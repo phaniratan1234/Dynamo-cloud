@@ -247,14 +247,16 @@ class Phase3Trainer:
         # Create mixed task dataset with curriculum
         mixed_train_dataset = create_mixed_task_dataset(
             train_datasets,
+            self.model.backbone.tokenizer,
             self.config.__dict__,
-            num_examples=self.config.data.mixed_task_size
+            num_examples_per_task=self.config.data.mixed_task_size // 5
         )
         
         mixed_val_dataset = create_mixed_task_dataset(
             val_datasets,
+            self.model.backbone.tokenizer,
             self.config.__dict__,
-            num_examples=self.config.data.mixed_task_size // 5
+            num_examples_per_task=self.config.data.mixed_task_size // 25
         )
         
         # Create mixed task data loaders

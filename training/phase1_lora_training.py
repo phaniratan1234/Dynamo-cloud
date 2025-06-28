@@ -98,7 +98,7 @@ class Phase1Trainer:
             Training metrics
         """
         if num_epochs is None:
-            num_epochs = self.config.training.num_epochs
+            num_epochs = getattr(self.config.training, 'phase1_epochs', self.config.training.num_epochs)
         if learning_rate is None:
             learning_rate = self.config.training.lora_lr
         
@@ -173,7 +173,7 @@ class Phase1Trainer:
         
         Args:
             resume: Whether to resume from existing checkpoints
-            
+        
         Returns:
             Training metrics for all adapters
         """
@@ -279,21 +279,21 @@ class Phase1Trainer:
                         
                         # Compute loss and normalize by accumulation steps
                         loss = loss_fn(predictions, targets) / gradient_accumulation_steps
-                
-                # Backward pass with gradient scaling
-                self.scaler.scale(loss).backward()
-                
-                # Gradient accumulation: only step every N batches
-                if (batch_idx + 1) % gradient_accumulation_steps == 0:
-                    # Gradient clipping with scaling
-                    self.scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    
-                    # Optimizer step with scaling
-                    self.scaler.step(optimizer)
-                    self.scaler.update()
-                    scheduler.step()
-                    optimizer.zero_grad()
+                        
+                        # Backward pass with gradient scaling
+                        self.scaler.scale(loss).backward()
+                        
+                        # Gradient accumulation: only step every N batches
+                        if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                            # Gradient clipping with scaling
+                            self.scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                            
+                            # Optimizer step with scaling
+                            self.scaler.step(optimizer)
+                            self.scaler.update()
+                            scheduler.step()
+                            optimizer.zero_grad()
             else:
                 # Standard forward pass (for CPU)
                 outputs = self.model(
@@ -323,7 +323,7 @@ class Phase1Trainer:
                         optimizer.step()
                         scheduler.step()
                         optimizer.zero_grad()
-            
+                
             # Update metrics (use original loss for logging)
             actual_loss = loss.item() * gradient_accumulation_steps
             loss_meter.update(actual_loss, batch['input_ids'].size(0))

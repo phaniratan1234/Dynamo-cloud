@@ -1,0 +1,2 @@
+2025-06-27 11:22:55,291 - training.phase3_joint_finetuning - INFO - info:68 - ⚠️  Phase 3 running on CPU - mixed precision disabled
+2025-06-27 11:22:55,434 - training.phase3_joint_finetuning - INFO - info:68 - Phase 3 trainer initialized

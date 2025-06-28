@@ -108,7 +108,7 @@ class Phase3Trainer:
             Training metrics
         """
         if num_epochs is None:
-            num_epochs = self.config.training.num_epochs
+            num_epochs = getattr(self.config.training, 'phase3_epochs', self.config.training.num_epochs)
         if learning_rate is None:
             learning_rate = self.config.training.joint_lr
         
@@ -212,7 +212,7 @@ class Phase3Trainer:
         
         Args:
             resume: Whether to resume from existing checkpoints
-            
+        
         Returns:
             Training metrics
         """

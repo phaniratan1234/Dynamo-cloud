@@ -1,0 +1,62 @@
+2025-06-27 14:00:59,463 - training.phase1_lora_training - INFO - info:68 - Phase 1 trainer initialized
+2025-06-27 14:00:59,463 - training.phase1_lora_training - INFO - info:68 - Starting Phase 1: Training all LoRA adapters
+2025-06-27 14:00:59,463 - training.phase1_lora_training - INFO - info:68 - Skipping checkpoint loading (resume=False)
+2025-06-27 14:00:59,911 - training.phase1_lora_training - INFO - info:68 - ==================================================
+2025-06-27 14:00:59,911 - training.phase1_lora_training - INFO - info:68 - Training sentiment adapter
+2025-06-27 14:00:59,911 - training.phase1_lora_training - INFO - info:68 - ==================================================
+2025-06-27 14:00:59,911 - training.phase1_lora_training - INFO - info:68 - Training sentiment adapter for 1 epochs
+2025-06-27 14:00:59,913 - training - INFO - info:68 - Starting Epoch 0
+2025-06-27 14:01:13,915 - training - INFO - info:68 - Step 1: Loss=0.6722, LR=2.97e-06
+2025-06-27 14:01:14,544 - training - INFO - info:68 - Step 2: Loss=0.6892, LR=5.94e-06
+2025-06-27 14:01:15,352 - training - INFO - info:68 - Step 3: Loss=0.7047, LR=8.91e-06
+2025-06-27 14:01:15,986 - training - INFO - info:68 - Step 4: Loss=0.6981, LR=1.19e-05
+2025-06-27 14:01:16,619 - training - INFO - info:68 - Step 5: Loss=0.6707, LR=1.49e-05
+2025-06-27 14:01:17,245 - training - INFO - info:68 - Step 6: Loss=0.7266, LR=1.78e-05
+2025-06-27 14:01:17,881 - training - INFO - info:68 - Step 7: Loss=0.6830, LR=2.08e-05
+2025-06-27 14:01:18,526 - training - INFO - info:68 - Step 8: Loss=0.6455, LR=2.38e-05
+2025-06-27 14:01:19,158 - training - INFO - info:68 - Step 9: Loss=0.7243, LR=2.67e-05
+2025-06-27 14:01:19,794 - training - INFO - info:68 - Step 10: Loss=0.7343, LR=2.97e-05
+2025-06-27 14:01:20,430 - training - INFO - info:68 - Step 11: Loss=0.7105, LR=3.27e-05
+2025-06-27 14:01:21,059 - training - INFO - info:68 - Step 12: Loss=0.7791, LR=3.57e-05
+2025-06-27 14:01:21,724 - training - INFO - info:68 - Step 13: Loss=0.6658, LR=3.86e-05
+2025-06-27 14:01:22,358 - training - INFO - info:68 - Step 14: Loss=0.7250, LR=4.16e-05
+2025-06-27 14:01:22,999 - training - INFO - info:68 - Step 15: Loss=0.7284, LR=4.46e-05
+2025-06-27 14:01:23,632 - training - INFO - info:68 - Step 16: Loss=0.6420, LR=4.75e-05
+2025-06-27 14:01:24,266 - training - INFO - info:68 - Step 17: Loss=0.7773, LR=5.05e-05
+2025-06-27 14:01:24,912 - training - INFO - info:68 - Step 18: Loss=0.6026, LR=5.35e-05
+2025-06-27 14:01:25,553 - training - INFO - info:68 - Step 19: Loss=0.7512, LR=5.64e-05
+2025-06-27 14:01:26,209 - training - INFO - info:68 - Step 20: Loss=0.6444, LR=5.94e-05
+2025-06-27 14:01:26,851 - training - INFO - info:68 - Step 21: Loss=0.6380, LR=6.24e-05
+2025-06-27 14:01:27,503 - training - INFO - info:68 - Step 22: Loss=0.6286, LR=6.54e-05
+2025-06-27 14:01:28,177 - training - INFO - info:68 - Step 23: Loss=0.6306, LR=6.83e-05
+2025-06-27 14:01:28,815 - training - INFO - info:68 - Step 24: Loss=0.7939, LR=7.13e-05
+2025-06-27 14:01:29,457 - training - INFO - info:68 - Step 25: Loss=0.6134, LR=7.43e-05
+2025-06-27 14:01:30,094 - training - INFO - info:68 - Step 26: Loss=0.6889, LR=7.72e-05
+2025-06-27 14:01:30,755 - training - INFO - info:68 - Step 27: Loss=0.6129, LR=8.02e-05
+2025-06-27 14:01:31,400 - training - INFO - info:68 - Step 28: Loss=0.7885, LR=8.32e-05
+2025-06-27 14:01:32,047 - training - INFO - info:68 - Step 29: Loss=0.8400, LR=8.62e-05
+2025-06-27 14:01:32,692 - training - INFO - info:68 - Step 30: Loss=0.6435, LR=8.91e-05
+2025-06-27 14:01:33,344 - training - INFO - info:68 - Step 31: Loss=0.7003, LR=9.21e-05
+2025-06-27 14:01:34,008 - training - INFO - info:68 - Step 32: Loss=0.5475, LR=9.51e-05
+2025-06-27 14:01:34,660 - training - INFO - info:68 - Step 33: Loss=0.6962, LR=9.80e-05
+2025-06-27 14:01:35,309 - training - INFO - info:68 - Step 34: Loss=0.6701, LR=1.01e-04
+2025-06-27 14:01:35,997 - training - INFO - info:68 - Step 35: Loss=0.7620, LR=1.04e-04
+2025-06-27 14:01:36,666 - training - INFO - info:68 - Step 36: Loss=0.6576, LR=1.07e-04
+2025-06-27 14:01:37,438 - training - INFO - info:68 - Step 37: Loss=0.6679, LR=1.10e-04
+2025-06-27 14:01:38,097 - training - INFO - info:68 - Step 38: Loss=0.6653, LR=1.13e-04
+2025-06-27 14:01:38,750 - training - INFO - info:68 - Step 39: Loss=0.6944, LR=1.16e-04
+2025-06-27 14:01:39,410 - training - INFO - info:68 - Step 40: Loss=0.6838, LR=1.19e-04
+2025-06-27 14:01:40,068 - training - INFO - info:68 - Step 41: Loss=0.7002, LR=1.22e-04
+2025-06-27 14:01:40,723 - training - INFO - info:68 - Step 42: Loss=0.7071, LR=1.25e-04
+2025-06-27 14:01:41,376 - training - INFO - info:68 - Step 43: Loss=0.6681, LR=1.28e-04
+2025-06-27 14:01:42,052 - training - INFO - info:68 - Step 44: Loss=0.7012, LR=1.31e-04
+2025-06-27 14:01:42,723 - training - INFO - info:68 - Step 45: Loss=0.6951, LR=1.34e-04
+2025-06-27 14:01:43,380 - training - INFO - info:68 - Step 46: Loss=0.6884, LR=1.37e-04
+2025-06-27 14:01:44,072 - training - INFO - info:68 - Step 47: Loss=0.6606, LR=1.40e-04
+2025-06-27 14:01:44,888 - training - INFO - info:68 - Step 48: Loss=0.6528, LR=1.43e-04
+2025-06-27 14:01:45,541 - training - INFO - info:68 - Step 49: Loss=0.6854, LR=1.46e-04
+2025-06-27 14:01:46,205 - training - INFO - info:68 - Step 50: Loss=0.6315, LR=1.49e-04
+2025-06-27 14:01:46,857 - training - INFO - info:68 - Step 51: Loss=0.6426, LR=1.52e-04
+2025-06-27 14:01:47,497 - training - INFO - info:68 - Step 52: Loss=0.7513, LR=1.54e-04
+2025-06-27 14:01:48,140 - training - INFO - info:68 - Step 53: Loss=0.7555, LR=1.57e-04
+2025-06-27 14:01:48,828 - training - INFO - info:68 - Step 54: Loss=0.6910, LR=1.60e-04

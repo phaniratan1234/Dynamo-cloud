@@ -113,7 +113,7 @@ class Phase2Trainer:
             Training metrics
         """
         if num_epochs is None:
-            num_epochs = self.config.training.num_epochs
+            num_epochs = getattr(self.config.training, 'phase2_epochs', self.config.training.num_epochs)
         if learning_rate is None:
             learning_rate = self.config.training.router_lr
         
@@ -201,7 +201,7 @@ class Phase2Trainer:
         
         Args:
             resume: Whether to resume from existing checkpoints
-            
+        
         Returns:
             Training metrics
         """
@@ -282,51 +282,100 @@ class Phase2Trainer:
             batch = move_to_device(batch, self.device)
             
             # Forward pass
-            with autocast():
+            if self.use_amp:
+                with autocast():
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        return_routing_info=True
+                    )
+                    
+                    # Get routing information
+                    routing_probs = outputs['routing_probs']
+                    routing_info = outputs['routing_info']
+                    
+                    # Prepare targets for loss computation
+                    task_targets = self._prepare_task_targets(batch)
+                    
+                    # Get backbone embeddings for consistency loss
+                    backbone_outputs = self.model.backbone(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask']
+                    )
+                    cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                    
+                    # Compute losses
+                    losses = loss_fn(
+                        task_outputs=outputs['task_outputs'],
+                        task_targets=task_targets,
+                        routing_probs=routing_probs,
+                        input_embeddings=cls_embeddings,
+                        temperature=routing_info.get('temperature'),
+                        training_phase="phase2"
+                    )
+                    
+                    total_loss = losses['total_loss']
+                    
+                    # Backward pass
+                    optimizer.zero_grad()
+                    self.scaler.scale(total_loss).backward()
+                    
+                    # Gradient clipping with scaling
+                    self.scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.router.parameters(), 
+                        max_norm=1.0
+                    )
+                    
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
+                    scheduler.step()
+            else:
+                # Standard forward pass (for CPU)
                 outputs = self.model(
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
                     return_routing_info=True
                 )
-            
-            # Get routing information
-            routing_probs = outputs['routing_probs']
-            routing_info = outputs['routing_info']
-            
-            # Prepare targets for loss computation
-            task_targets = self._prepare_task_targets(batch)
-            
-            # Get backbone embeddings for consistency loss
-            backbone_outputs = self.model.backbone(
-                input_ids=batch['input_ids'],
-                attention_mask=batch['attention_mask']
-            )
-            cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
-            
-            # Compute losses
-            losses = loss_fn(
-                task_outputs=outputs['task_outputs'],
-                task_targets=task_targets,
-                routing_probs=routing_probs,
-                input_embeddings=cls_embeddings,
-                temperature=routing_info.get('temperature'),
-                training_phase="phase2"
-            )
-            
-            total_loss = losses['total_loss']
-            
-            # Backward pass
-            optimizer.zero_grad()
-            total_loss.backward()
-            
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(
-                self.model.router.parameters(), 
-                max_norm=1.0
-            )
-            
-            optimizer.step()
-            scheduler.step()
+                
+                # Get routing information
+                routing_probs = outputs['routing_probs']
+                routing_info = outputs['routing_info']
+                
+                # Prepare targets for loss computation
+                task_targets = self._prepare_task_targets(batch)
+                
+                # Get backbone embeddings for consistency loss
+                backbone_outputs = self.model.backbone(
+                    input_ids=batch['input_ids'],
+                    attention_mask=batch['attention_mask']
+                )
+                cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                
+                # Compute losses
+                losses = loss_fn(
+                    task_outputs=outputs['task_outputs'],
+                    task_targets=task_targets,
+                    routing_probs=routing_probs,
+                    input_embeddings=cls_embeddings,
+                    temperature=routing_info.get('temperature'),
+                    training_phase="phase2"
+                )
+                
+                total_loss = losses['total_loss']
+                
+                # Backward pass
+                optimizer.zero_grad()
+                total_loss.backward()
+                
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.router.parameters(), 
+                    max_norm=1.0
+                )
+                
+                optimizer.step()
+                scheduler.step()
             
             # Compute routing accuracy
             routing_accuracy = self._compute_routing_accuracy(batch, routing_probs)
@@ -380,41 +429,78 @@ class Phase2Trainer:
                 batch = move_to_device(batch, self.device)
                 
                 # Forward pass
-                with autocast():
+                if self.use_amp:
+                    with autocast():
+                        outputs = self.model(
+                            input_ids=batch['input_ids'],
+                            attention_mask=batch['attention_mask'],
+                            return_routing_info=True
+                        )
+                        
+                        routing_probs = outputs['routing_probs']
+                        
+                        # Prepare targets
+                        task_targets = self._prepare_task_targets(batch)
+                        
+                        # Get backbone embeddings
+                        backbone_outputs = self.model.backbone(
+                            input_ids=batch['input_ids'],
+                            attention_mask=batch['attention_mask']
+                        )
+                        cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                        
+                        # Compute losses
+                        losses = loss_fn(
+                            task_outputs=outputs['task_outputs'],
+                            task_targets=task_targets,
+                            routing_probs=routing_probs,
+                            input_embeddings=cls_embeddings,
+                            training_phase="phase2"
+                        )
+                        
+                        # Compute routing accuracy
+                        routing_accuracy = self._compute_routing_accuracy(batch, routing_probs)
+                        
+                        # Update metrics
+                        batch_size = batch['input_ids'].size(0)
+                        loss_meters['total_loss'].update(losses['total_loss'].item(), batch_size)
+                        loss_meters['routing_accuracy'].update(routing_accuracy, batch_size)
+                else:
+                    # Standard forward pass (for CPU)
                     outputs = self.model(
                         input_ids=batch['input_ids'],
                         attention_mask=batch['attention_mask'],
                         return_routing_info=True
                     )
-                
-                routing_probs = outputs['routing_probs']
-                
-                # Prepare targets
-                task_targets = self._prepare_task_targets(batch)
-                
-                # Get backbone embeddings
-                backbone_outputs = self.model.backbone(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask']
-                )
-                cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
-                
-                # Compute losses
-                losses = loss_fn(
-                    task_outputs=outputs['task_outputs'],
-                    task_targets=task_targets,
-                    routing_probs=routing_probs,
-                    input_embeddings=cls_embeddings,
-                    training_phase="phase2"
-                )
-                
-                # Compute routing accuracy
-                routing_accuracy = self._compute_routing_accuracy(batch, routing_probs)
-                
-                # Update metrics
-                batch_size = batch['input_ids'].size(0)
-                loss_meters['total_loss'].update(losses['total_loss'].item(), batch_size)
-                loss_meters['routing_accuracy'].update(routing_accuracy, batch_size)
+                    
+                    routing_probs = outputs['routing_probs']
+                    
+                    # Prepare targets
+                    task_targets = self._prepare_task_targets(batch)
+                    
+                    # Get backbone embeddings
+                    backbone_outputs = self.model.backbone(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask']
+                    )
+                    cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
+                    
+                    # Compute losses
+                    losses = loss_fn(
+                        task_outputs=outputs['task_outputs'],
+                        task_targets=task_targets,
+                        routing_probs=routing_probs,
+                        input_embeddings=cls_embeddings,
+                        training_phase="phase2"
+                    )
+                    
+                    # Compute routing accuracy
+                    routing_accuracy = self._compute_routing_accuracy(batch, routing_probs)
+                    
+                    # Update metrics
+                    batch_size = batch['input_ids'].size(0)
+                    loss_meters['total_loss'].update(losses['total_loss'].item(), batch_size)
+                    loss_meters['routing_accuracy'].update(routing_accuracy, batch_size)
         
         return {key: meter.avg for key, meter in loss_meters.items()}
     

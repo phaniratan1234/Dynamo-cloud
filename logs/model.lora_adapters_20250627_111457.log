@@ -1,0 +1,7 @@
+2025-06-27 11:14:58,081 - model.lora_adapters - INFO - info:68 - Created sentiment LoRA adapter with 1,623,170 parameters
+2025-06-27 11:14:58,089 - model.lora_adapters - INFO - info:68 - Created qa LoRA adapter with 1,328,642 parameters
+2025-06-27 11:14:58,182 - model.lora_adapters - INFO - info:68 - Created summarization LoRA adapter with 41,162,841 parameters
+2025-06-27 11:14:58,275 - model.lora_adapters - INFO - info:68 - Created code_generation LoRA adapter with 41,162,841 parameters
+2025-06-27 11:14:58,370 - model.lora_adapters - INFO - info:68 - Created translation LoRA adapter with 41,162,841 parameters
+2025-06-27 11:14:58,370 - model.lora_adapters - INFO - info:68 - Created LoRA adapter collection with 5 adapters
+2025-06-27 11:14:58,371 - model.lora_adapters - INFO - info:68 - Total LoRA parameters: 126,440,335

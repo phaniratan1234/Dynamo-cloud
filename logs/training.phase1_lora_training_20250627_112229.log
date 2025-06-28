@@ -1,0 +1,2 @@
+2025-06-27 11:22:30,326 - training.phase1_lora_training - INFO - info:68 - ⚠️  Running on CPU - mixed precision disabled
+2025-06-27 11:22:30,667 - training.phase1_lora_training - INFO - info:68 - Phase 1 trainer initialized

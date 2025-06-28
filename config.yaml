@@ -42,7 +42,14 @@ model:
 
 # Training Configuration - Optimized for T4 (16GB memory)
 training:
-  num_epochs: 1
+  # Phase-specific epochs (ideal values for DYNAMO training)
+  phase1_epochs: 3    # LoRA adapter training - moderate epochs for good task-specific learning
+  phase2_epochs: 5    # Router training - more epochs needed for complex routing decisions
+  phase3_epochs: 2    # Joint fine-tuning - fewer epochs to avoid overfitting
+  
+  # Legacy support (fallback if phase-specific not used)
+  num_epochs: 3
+  
   batch_size: 32  # Optimized for T4 memory + mixed precision
   gradient_accumulation_steps: 2  # Effective batch size: 64
   max_length: 512  # Full sequence length

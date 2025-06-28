@@ -183,9 +183,9 @@ class TaskSpecificLoRA(nn.Module):
             # Generation tasks: predict vocabulary logits with positional encoding
             return nn.ModuleDict({
                 'vocab_head': nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size),
-                    nn.ReLU(),
-                    nn.Dropout(self.dropout),
+                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.ReLU(),
+                nn.Dropout(self.dropout),
                     nn.Linear(self.hidden_size, 50265)  # RoBERTa vocab size
                 ),
                 'pos_projection': nn.Linear(self.hidden_size + 1, self.hidden_size)

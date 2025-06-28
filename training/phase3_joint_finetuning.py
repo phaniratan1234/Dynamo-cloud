@@ -308,6 +308,7 @@ class Phase3Trainer:
         
         # Metrics tracking
         loss_meters = {
+            'total_loss': AverageMeter(),
             'train_loss': AverageMeter(),
             'load_balance_loss': AverageMeter(),
             'efficiency_loss': AverageMeter(),
@@ -340,6 +341,14 @@ class Phase3Trainer:
                 batch = next(mixed_iter)
                 metrics = self._train_mixed_batch(batch, optimizer, scheduler, loss_fn)
                 self._update_meters(loss_meters, task_performance, metrics)
+                
+                # Update progress bar with loss information
+                current_loss = loss_meters['total_loss'].avg
+                current_acc = loss_meters['routing_accuracy'].avg
+                progress_bar.set_description(
+                    f"Joint Training (curriculum: {self.current_curriculum_ratio:.2f}) | "
+                    f"Loss: {current_loss:.4f} | Router Acc: {current_acc:.3f}"
+                )
                 progress_bar.update(1)
             except StopIteration:
                 break
@@ -358,6 +367,14 @@ class Phase3Trainer:
                             batch, task_name, optimizer, scheduler, loss_fn
                         )
                         self._update_meters(loss_meters, task_performance, metrics)
+                        
+                        # Update progress bar with loss information  
+                        current_loss = loss_meters['total_loss'].avg
+                        current_acc = loss_meters['routing_accuracy'].avg
+                        progress_bar.set_description(
+                            f"Joint Training (curriculum: {self.current_curriculum_ratio:.2f}) | "
+                            f"Loss: {current_loss:.4f} | Router Acc: {current_acc:.3f}"
+                        )
                         progress_bar.update(1)
                     except StopIteration:
                         break
@@ -730,6 +747,11 @@ class Phase3Trainer:
         for key, value in metrics.items():
             if key in loss_meters:
                 loss_meters[key].update(value, batch_size)
+            elif key == 'routing_accuracy':
+                # Handle routing accuracy specifically
+                if 'routing_accuracy' not in loss_meters:
+                    loss_meters['routing_accuracy'] = AverageMeter()
+                loss_meters['routing_accuracy'].update(value, batch_size)
             elif key.endswith('_accuracy') and key.replace('_accuracy', '') in task_performance:
                 task_name = key.replace('_accuracy', '')
                 task_performance[task_name].update(value, batch_size)

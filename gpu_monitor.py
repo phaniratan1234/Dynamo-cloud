@@ -32,13 +32,15 @@ class GPUMonitor:
             'ram_percent': []
         }
         
-    def start_monitoring(self):
+    def start_monitoring(self, silent: bool = False):
         """Start GPU monitoring in background thread."""
         self.monitoring = True
+        self.silent = silent
         self.monitor_thread = threading.Thread(target=self._monitor_loop)
         self.monitor_thread.daemon = True
         self.monitor_thread.start()
-        print("🔍 GPU monitoring started...")
+        if not silent:
+            print("🔍 GPU monitoring started...")
         
     def stop_monitoring(self):
         """Stop GPU monitoring."""
@@ -78,9 +80,10 @@ class GPUMonitor:
                 self.metrics['cpu_percent'].append(cpu_percent)
                 self.metrics['ram_percent'].append(ram_percent)
                 
-                # Console logging
-                print(f"⚡ GPU: {memory_used:.1f}/{memory_total:.1f}GB ({memory_used/memory_total*100:.1f}%) | "
-                      f"Util: {gpu_util}% | CPU: {cpu_percent:.1f}% | RAM: {ram_percent:.1f}%")
+                # Console logging (only if not in silent mode)
+                if not getattr(self, 'silent', False):
+                    print(f"⚡ GPU: {memory_used:.1f}/{memory_total:.1f}GB ({memory_used/memory_total*100:.1f}%) | "
+                          f"Util: {gpu_util}% | CPU: {cpu_percent:.1f}% | RAM: {ram_percent:.1f}%")
             
             time.sleep(self.log_interval)
     

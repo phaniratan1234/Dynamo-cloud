@@ -133,9 +133,9 @@ def run_with_monitoring(phase: int, config_dict: dict, config_obj: Config, model
     print(f"\n🚀 Starting Phase {phase} with GPU monitoring")
     print("=" * 60)
     
-    # Start GPU monitoring
+    # Start GPU monitoring (silent mode during training)
     monitor = GPUMonitor(log_interval=10)  # Log every 10 seconds
-    monitor.start_monitoring()
+    monitor.start_monitoring(silent=True)  # Silent mode to not interfere with progress bars
     
     try:
         # Run the appropriate training phase

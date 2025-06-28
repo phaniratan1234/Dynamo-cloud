@@ -422,7 +422,7 @@ class Phase3Trainer:
                 task_targets=task_targets,
                 routing_probs=outputs['routing_probs'],
                 routing_logits=outputs['routing_info'].get('routing_logits', outputs['routing_probs']),  # FIXED: Get routing logits from routing_info
-                true_task_labels=batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device)),  # FIXED: Added missing parameter
+                true_task_labels=batch.get('task_label', batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device))),  # FIXED: Check both task_label and task_labels
                 input_embeddings=cls_embeddings,
                 temperature=outputs['routing_info'].get('temperature'),
                 training_phase="phase3"
@@ -466,6 +466,11 @@ class Phase3Trainer:
         for loss_name, loss_value in losses.items():
             if loss_name != 'total_loss':
                 metrics[loss_name] = loss_value.item()
+        
+        # Debug: Print loss breakdown every 100 steps
+        if self.global_step % 100 == 0:
+            loss_breakdown = ", ".join([f"{k}={v:.4f}" for k, v in metrics.items() if k.endswith('_loss')])
+            logger.debug(f"Loss breakdown: {loss_breakdown}")
         
         return metrics
     
@@ -595,7 +600,7 @@ class Phase3Trainer:
                         task_targets=task_targets,
                         routing_probs=outputs['routing_probs'],
                         routing_logits=outputs['routing_info'].get('routing_logits', outputs['routing_probs']),  # FIXED: Get routing logits from routing_info
-                        true_task_labels=batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device)),  # FIXED: Added missing parameter
+                        true_task_labels=batch.get('task_label', batch.get('task_labels', torch.zeros(batch['input_ids'].size(0), dtype=torch.long, device=self.device))),  # FIXED: Check both task_label and task_labels
                         input_embeddings=cls_embeddings,
                         training_phase="phase3"
                     )
@@ -674,7 +679,27 @@ class Phase3Trainer:
     ) -> float:
         """Compute routing accuracy."""
         predicted_tasks = torch.argmax(routing_probs, dim=-1)
-        task_labels = batch.get('task_labels', torch.zeros_like(predicted_tasks))
+        
+        # FIXED: Check both task_label (singular) and task_labels (plural)
+        task_labels = batch.get('task_label', batch.get('task_labels'))
+        
+        # Debug: Print what keys are available and what we found
+        if self.global_step % 100 == 0:  # Only print every 100 steps to avoid spam
+            batch_keys = list(batch.keys())
+            logger.debug(f"Batch keys: {batch_keys}")
+            if task_labels is not None:
+                logger.debug(f"Found task_labels: shape={task_labels.shape}, values={task_labels[:3] if len(task_labels) > 0 else 'empty'}")
+                logger.debug(f"Predicted tasks: {predicted_tasks[:3] if len(predicted_tasks) > 0 else 'empty'}")
+            else:
+                logger.debug("No task labels found in batch - using entropy-based metric")
+        
+        if task_labels is None:
+            # No task labels available - compute entropy-based confidence instead
+            entropy = -torch.sum(routing_probs * torch.log(routing_probs + 1e-8), dim=1)
+            avg_entropy = entropy.mean().item()
+            max_entropy = torch.log(torch.tensor(float(routing_probs.size(1))))
+            normalized_entropy = avg_entropy / max_entropy.item()
+            return max(0.0, 1.0 - normalized_entropy)  # Higher confidence = lower entropy
         
         if task_labels.dim() > 1:  # Multi-hot encoding
             true_tasks = torch.argmax(task_labels, dim=-1)
@@ -682,7 +707,13 @@ class Phase3Trainer:
             true_tasks = task_labels
         
         correct = (predicted_tasks == true_tasks).float()
-        return correct.mean().item()
+        accuracy = correct.mean().item()
+        
+        # Debug: Print accuracy calculation details
+        if self.global_step % 100 == 0:
+            logger.debug(f"Routing accuracy: {accuracy:.3f} ({correct.sum().item()}/{len(correct)} correct)")
+        
+        return accuracy
     
     def _compute_task_accuracy(
         self, 

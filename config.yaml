@@ -45,7 +45,7 @@ training:
   # Phase-specific epochs (ideal values for DYNAMO training)
   phase1_epochs: 3    # LoRA adapter training - moderate epochs for good task-specific learning
   phase2_epochs: 5    # Router training - more epochs needed for complex routing decisions
-  phase3_epochs: 2    # Joint fine-tuning - fewer epochs to avoid overfitting
+  phase3_epochs: 3    # Joint fine-tuning - better curriculum progression (epochs 0,1,2)
   
   # Legacy support (fallback if phase-specific not used)
   num_epochs: 3

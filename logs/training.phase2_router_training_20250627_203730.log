@@ -1,0 +1,32 @@
+2025-06-27 20:37:31,708 - training.phase2_router_training - INFO - info:68 - 🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision
+2025-06-27 20:37:31,708 - training.phase2_router_training - INFO - info:68 - 📂 Loading Phase 1 adapter checkpoints...
+2025-06-27 20:37:31,708 - training.phase2_router_training - INFO - info:68 -   📁 Loading sentiment adapter from ./checkpoints/phase1/sentiment_adapter.pt
+2025-06-27 20:37:31,728 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 20:37:31,728 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 20:37:31,728 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 20:37:31,731 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cuda
+2025-06-27 20:37:31,731 - training.phase2_router_training - ERROR - error:76 -   ❌ Failed to load sentiment adapter: Torch not compiled with CUDA enabled
+2025-06-27 20:37:31,731 - training.phase2_router_training - ERROR - error:76 -   📍 Error type: AssertionError
+2025-06-27 20:37:31,732 - training.phase2_router_training - ERROR - error:76 -   📍 Traceback: Traceback (most recent call last):
+  File "/Users/phaniratanyalamanchili/Downloads/dynamo_project 2/training/phase2_router_training.py", line 724, in _load_phase1_checkpoints
+    adapter.to(self.device)
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1343, in to
+    return self._apply(convert)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 903, in _apply
+    module._apply(fn)
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 903, in _apply
+    module._apply(fn)
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 903, in _apply
+    module._apply(fn)
+  [Previous line repeated 1 more time]
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 930, in _apply
+    param_applied = fn(param)
+                    ^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1329, in convert
+    return t.to(
+           ^^^^^
+  File "/opt/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py", line 310, in _lazy_init
+    raise AssertionError("Torch not compiled with CUDA enabled")
+AssertionError: Torch not compiled with CUDA enabled
+

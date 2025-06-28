@@ -1,0 +1,39 @@
+2025-06-27 23:30:45,802 - training.phase2_router_training - WARNING - warning:72 - ⚠️  CUDA requested but not available, using CPU instead
+2025-06-27 23:30:45,802 - training.phase2_router_training - INFO - info:68 - ⚠️  Phase 2 running on CPU - mixed precision disabled
+2025-06-27 23:30:45,802 - training.phase2_router_training - INFO - info:68 - 📂 Loading Phase 1 adapter checkpoints...
+2025-06-27 23:30:45,802 - training.phase2_router_training - INFO - info:68 -   📁 Loading code_generation adapter from ./checkpoints/phase1/code_generation_adapter.pt
+2025-06-27 23:30:45,876 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 23:30:45,877 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 23:30:45,877 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 23:30:45,884 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cpu
+2025-06-27 23:30:45,885 - training.phase2_router_training - INFO - info:68 -   ✅ Loaded code_generation adapter from Phase 1 checkpoint
+2025-06-27 23:30:45,885 - training.phase2_router_training - INFO - info:68 -   📁 Loading qa adapter from ./checkpoints/phase1/qa_adapter.pt
+2025-06-27 23:30:45,910 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 23:30:45,911 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 23:30:45,911 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 23:30:45,913 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cpu
+2025-06-27 23:30:45,913 - training.phase2_router_training - INFO - info:68 -   ✅ Loaded qa adapter from Phase 1 checkpoint
+2025-06-27 23:30:45,913 - training.phase2_router_training - INFO - info:68 -   📁 Loading sentiment adapter from ./checkpoints/phase1/sentiment_adapter.pt
+2025-06-27 23:30:45,933 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 23:30:45,933 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 23:30:45,933 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 23:30:45,935 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cpu
+2025-06-27 23:30:45,935 - training.phase2_router_training - INFO - info:68 -   ✅ Loaded sentiment adapter from Phase 1 checkpoint
+2025-06-27 23:30:45,935 - training.phase2_router_training - INFO - info:68 -   📁 Loading summarization adapter from ./checkpoints/phase1/summarization_adapter.pt
+2025-06-27 23:30:46,005 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 23:30:46,006 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 23:30:46,006 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 23:30:46,012 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cpu
+2025-06-27 23:30:46,013 - training.phase2_router_training - INFO - info:68 -   ✅ Loaded summarization adapter from Phase 1 checkpoint
+2025-06-27 23:30:46,013 - training.phase2_router_training - INFO - info:68 -   📁 Loading translation adapter from ./checkpoints/phase1/translation_adapter.pt
+2025-06-27 23:30:46,084 - training.phase2_router_training - INFO - info:68 -   ✅ Checkpoint loaded, keys: ['lora_layers.layer_0.query.lora_A.weight', 'lora_layers.layer_0.query.lora_B.weight', 'lora_layers.layer_0.key.lora_A.weight', 'lora_layers.layer_0.key.lora_B.weight', 'lora_layers.layer_0.value.lora_A.weight']...
+2025-06-27 23:30:46,084 - training.phase2_router_training - INFO - info:68 -   📋 Adapter type: <class 'model.lora_adapters.TaskSpecificLoRA'>
+2025-06-27 23:30:46,084 - training.phase2_router_training - INFO - info:68 -   🔄 Loading state dict into adapter...
+2025-06-27 23:30:46,093 - training.phase2_router_training - INFO - info:68 -   🎯 Moving adapter to device: cpu
+2025-06-27 23:30:46,094 - training.phase2_router_training - INFO - info:68 -   ✅ Loaded translation adapter from Phase 1 checkpoint
+2025-06-27 23:30:46,094 - training.phase2_router_training - INFO - info:68 - 🎉 Successfully loaded 5/5 Phase 1 adapters!
+2025-06-27 23:30:46,094 - training.phase2_router_training - INFO - info:68 - ✅ Phase 2 is ready to train the router with frozen, trained adapters
+2025-06-27 23:30:46,094 - training.phase2_router_training - INFO - info:68 - 🔍 Verifying adapter weights are loaded correctly...
+2025-06-27 23:30:46,095 - training.phase2_router_training - INFO - info:68 -   ✅ qa adapter verified (weight std: 0.2514)
+2025-06-27 23:30:46,096 - training.phase2_router_training - INFO - info:68 -   ✅ sentiment adapter verified (weight std: 0.0414)
+2025-06-27 23:30:46,236 - training.phase2_router_training - INFO - info:68 - Phase 2 trainer initialized

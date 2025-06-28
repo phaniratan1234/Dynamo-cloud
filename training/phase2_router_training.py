@@ -21,7 +21,7 @@ from collections import defaultdict, OrderedDict
 from pathlib import Path
 
 from model import DynamoModel
-from data import DatasetLoader, create_mixed_task_dataset, create_mixed_task_dataloader
+from data import DatasetLoader, create_router_training_dataset, create_router_training_dataloader
 from training.losses import DynamoLoss, create_loss_function
 from utils.config import Config
 from utils.logger import get_logger, TrainingLogger
@@ -48,7 +48,14 @@ class Phase2Trainer:
         """
         self.config = config
         self.model = model
-        self.device = torch.device(config.device)
+        
+        # Set device based on availability, not just config
+        if torch.cuda.is_available() and config.device == 'cuda':
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
+            if config.device == 'cuda':
+                logger.warning("⚠️  CUDA requested but not available, using CPU instead")
         
         # GPU Optimizations
         if self.device.type == 'cuda':
@@ -132,7 +139,7 @@ class Phase2Trainer:
         
         # Setup early stopping
         early_stopping = EarlyStopping(
-            patience=self.config.training.get('patience', 5),
+            patience=getattr(self.config.training, 'patience', 5),
             min_delta=0.001
         )
         
@@ -218,28 +225,30 @@ class Phase2Trainer:
         train_datasets = self.data_loader.create_datasets('train')
         val_datasets = self.data_loader.create_datasets('validation')
         
-        # Create mixed task datasets
-        mixed_train_dataset = create_mixed_task_dataset(
+        # Create router training datasets (single-task examples with task labels)
+        router_train_dataset = create_router_training_dataset(
             train_datasets,
+            self.model.backbone.tokenizer,
             self.config.__dict__,
-            num_examples=self.config.data.mixed_task_size
+            num_examples_per_task=self.config.data.mixed_task_size // 5  # Examples per task
         )
         
-        mixed_val_dataset = create_mixed_task_dataset(
+        router_val_dataset = create_router_training_dataset(
             val_datasets,
+            self.model.backbone.tokenizer,
             self.config.__dict__,
-            num_examples=self.config.data.mixed_task_size // 5  # Smaller validation set
+            num_examples_per_task=self.config.data.mixed_task_size // 25  # Smaller validation set
         )
         
         # Create data loaders
-        train_dataloader = create_mixed_task_dataloader(
-            mixed_train_dataset,
+        train_dataloader = create_router_training_dataloader(
+            router_train_dataset,
             batch_size=self.config.training.batch_size,
             shuffle=True
         )
         
-        val_dataloader = create_mixed_task_dataloader(
-            mixed_val_dataset,
+        val_dataloader = create_router_training_dataloader(
+            router_val_dataset,
             batch_size=self.config.evaluation.eval_batch_size,
             shuffle=False
         )
@@ -297,6 +306,9 @@ class Phase2Trainer:
                     # Prepare targets for loss computation
                     task_targets = self._prepare_task_targets(batch)
                     
+                    # Filter task outputs to match available targets
+                    filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
+                    
                     # Get backbone embeddings for consistency loss
                     backbone_outputs = self.model.backbone(
                         input_ids=batch['input_ids'],
@@ -304,32 +316,34 @@ class Phase2Trainer:
                     )
                     cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
                     
-                    # Compute losses
+                    # Compute losses with supervised router training
                     losses = loss_fn(
-                        task_outputs=outputs['task_outputs'],
+                        task_outputs=filtered_task_outputs,
                         task_targets=task_targets,
                         routing_probs=routing_probs,
+                        routing_logits=routing_info['routing_logits'],  # NEW: For supervision
+                        true_task_labels=batch['task_label'],  # NEW: Ground truth task labels
                         input_embeddings=cls_embeddings,
                         temperature=routing_info.get('temperature'),
                         training_phase="phase2"
                     )
                     
-                    total_loss = losses['total_loss']
+                total_loss = losses['total_loss']
                     
-                    # Backward pass
-                    optimizer.zero_grad()
-                    self.scaler.scale(total_loss).backward()
+                # Backward pass
+                optimizer.zero_grad()
+                self.scaler.scale(total_loss).backward()
                     
                     # Gradient clipping with scaling
-                    self.scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.router.parameters(), 
-                        max_norm=1.0
+                self.scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.router.parameters(),
+                    max_norm=1.0
                     )
                     
-                    self.scaler.step(optimizer)
-                    self.scaler.update()
-                    scheduler.step()
+                self.scaler.step(optimizer)
+                self.scaler.update()
+                scheduler.step()
             else:
                 # Standard forward pass (for CPU)
                 outputs = self.model(
@@ -345,6 +359,9 @@ class Phase2Trainer:
                 # Prepare targets for loss computation
                 task_targets = self._prepare_task_targets(batch)
                 
+                # Filter task outputs to match available targets
+                filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
+                
                 # Get backbone embeddings for consistency loss
                 backbone_outputs = self.model.backbone(
                     input_ids=batch['input_ids'],
@@ -352,11 +369,13 @@ class Phase2Trainer:
                 )
                 cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
                 
-                # Compute losses
+                # Compute losses with supervised router training
                 losses = loss_fn(
-                    task_outputs=outputs['task_outputs'],
+                    task_outputs=filtered_task_outputs,
                     task_targets=task_targets,
                     routing_probs=routing_probs,
+                    routing_logits=routing_info['routing_logits'],  # NEW: For supervision
+                    true_task_labels=batch['task_label'],  # NEW: Ground truth task labels
                     input_embeddings=cls_embeddings,
                     temperature=routing_info.get('temperature'),
                     training_phase="phase2"
@@ -370,7 +389,7 @@ class Phase2Trainer:
                 
                 # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.router.parameters(), 
+                    self.model.router.parameters(),
                     max_norm=1.0
                 )
                 
@@ -442,6 +461,9 @@ class Phase2Trainer:
                         # Prepare targets
                         task_targets = self._prepare_task_targets(batch)
                         
+                        # Filter task outputs to match available targets
+                        filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
+                        
                         # Get backbone embeddings
                         backbone_outputs = self.model.backbone(
                             input_ids=batch['input_ids'],
@@ -449,11 +471,13 @@ class Phase2Trainer:
                         )
                         cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
                         
-                        # Compute losses
+                        # Compute losses with supervised router training
                         losses = loss_fn(
-                            task_outputs=outputs['task_outputs'],
+                            task_outputs=filtered_task_outputs,
                             task_targets=task_targets,
                             routing_probs=routing_probs,
+                            routing_logits=outputs['routing_info']['routing_logits'],
+                            true_task_labels=batch['task_label'],
                             input_embeddings=cls_embeddings,
                             training_phase="phase2"
                         )
@@ -478,6 +502,9 @@ class Phase2Trainer:
                     # Prepare targets
                     task_targets = self._prepare_task_targets(batch)
                     
+                    # Filter task outputs to match available targets
+                    filtered_task_outputs = self._filter_task_outputs(outputs['task_outputs'])
+                    
                     # Get backbone embeddings
                     backbone_outputs = self.model.backbone(
                         input_ids=batch['input_ids'],
@@ -485,11 +512,13 @@ class Phase2Trainer:
                     )
                     cls_embeddings = backbone_outputs.last_hidden_state[:, 0, :]
                     
-                    # Compute losses
+                    # Compute losses with supervised router training
                     losses = loss_fn(
-                        task_outputs=outputs['task_outputs'],
+                        task_outputs=filtered_task_outputs,
                         task_targets=task_targets,
                         routing_probs=routing_probs,
+                        routing_logits=outputs['routing_info']['routing_logits'],
+                        true_task_labels=batch['task_label'],
                         input_embeddings=cls_embeddings,
                         training_phase="phase2"
                     )
@@ -505,45 +534,119 @@ class Phase2Trainer:
         return {key: meter.avg for key, meter in loss_meters.items()}
     
     def _prepare_task_targets(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        """Prepare task targets from mixed task batch."""
+        """Prepare task targets from router training batch."""
         task_targets = {}
+        task_indices = {}  # Track which examples have targets for each task
         
-        # Extract expected outputs for each task
-        expected_outputs = batch['expected_outputs']
+        batch_size = batch['input_ids'].size(0)
         
+        # For router training, each example has targets for all tasks
+        # but only one task is the "true" task for supervised learning
         for task_name in self.model.task_names:
-            if task_name in expected_outputs:
-                targets = expected_outputs[task_name]
+            if task_name in batch:
+                targets = batch[task_name]
                 
                 # Convert to appropriate tensor format
-                if isinstance(targets, list):
+                if isinstance(targets, torch.Tensor):
+                    # Ensure tensor is on correct device with correct dtype
+                    if task_name == 'qa':
+                        # QA targets should be long tensors
+                        targets = targets.to(dtype=torch.long, device=self.device)
+                    elif task_name == 'sentiment':
+                        # Sentiment targets should be long tensors
+                        targets = targets.to(dtype=torch.long, device=self.device)
+                    elif task_name in ['summarization', 'code_generation', 'translation']:
+                        # Generation targets should be long tensors
+                        targets = targets.to(dtype=torch.long, device=self.device)
+                    else:
+                        targets = targets.to(dtype=torch.long, device=self.device)
+                    
+                    task_targets[task_name] = targets
+                    
+                    # For router training, all examples have targets for all tasks
+                    task_indices[task_name] = torch.arange(batch_size, device=self.device)
+                    
+                elif isinstance(targets, list):
+                    # Convert list to tensor
                     if task_name == 'qa':
                         # QA targets are [start, end] positions
-                        task_targets[task_name] = torch.stack([
-                            torch.tensor(t, dtype=torch.long, device=self.device) 
-                            for t in targets
-                        ])
+                        processed_targets = []
+                        for t in targets:
+                            if isinstance(t, torch.Tensor):
+                                processed_targets.append(t.to(dtype=torch.long, device=self.device))
+                            elif isinstance(t, (list, tuple)) and len(t) == 2:
+                                processed_targets.append(torch.tensor(t, dtype=torch.long, device=self.device))
+                            else:
+                                # Handle scalar or invalid values
+                                processed_targets.append(torch.tensor([0, 0], dtype=torch.long, device=self.device))
+                        task_targets[task_name] = torch.stack(processed_targets)
                     else:
-                        task_targets[task_name] = torch.tensor(
-                            targets, dtype=torch.long, device=self.device
-                        )
-                elif isinstance(targets, torch.Tensor):
-                    task_targets[task_name] = targets.to(self.device)
+                        # For other tasks
+                        processed_targets = []
+                        for t in targets:
+                            if isinstance(t, torch.Tensor):
+                                processed_targets.append(t.to(dtype=torch.long, device=self.device))
+                            elif isinstance(t, (int, float)):
+                                processed_targets.append(torch.tensor(t, dtype=torch.long, device=self.device))
+                            else:
+                                processed_targets.append(torch.tensor(0, dtype=torch.long, device=self.device))
+                        task_targets[task_name] = torch.stack(processed_targets)
+                    
+                    task_indices[task_name] = torch.arange(len(targets), device=self.device)
+                    
+                else:
+                    # Try to convert other types to tensor
+                    try:
+                        task_targets[task_name] = torch.tensor(targets, dtype=torch.long, device=self.device)
+                        task_indices[task_name] = torch.arange(batch_size, device=self.device)
+                    except Exception as e:
+                        logger.warning(f"Could not convert {task_name} targets to tensor: {e}")
+                        continue
         
+        # Store task indices for filtering model outputs
+        self._current_task_indices = task_indices
         return task_targets
+    
+    def _filter_task_outputs(self, task_outputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Filter task outputs to match available targets."""
+        filtered_outputs = {}
+        
+        if not hasattr(self, '_current_task_indices'):
+            return task_outputs
+        
+        for task_name, outputs in task_outputs.items():
+            if task_name in self._current_task_indices:
+                indices = self._current_task_indices[task_name]
+                # Filter outputs to only include examples that have targets
+                filtered_outputs[task_name] = outputs[indices]
+            else:
+                filtered_outputs[task_name] = outputs
+        
+        return filtered_outputs
     
     def _compute_routing_accuracy(
         self, 
         batch: Dict[str, Any], 
         routing_probs: torch.Tensor
     ) -> float:
-        """Compute routing accuracy based on task labels."""
+        """Compute routing accuracy using true task labels."""
         # Get predicted tasks
         predicted_tasks = torch.argmax(routing_probs, dim=-1)
         
-        # Get true task labels (multi-hot to single label for accuracy)
-        task_labels = batch['task_labels']  # [batch_size, num_tasks]
-        true_tasks = torch.argmax(task_labels, dim=-1)
+        # Use single task labels for supervised router training
+        if 'task_label' in batch:
+            true_tasks = batch['task_label']  # [batch_size] - single task per example
+        elif 'task_labels' in batch:
+            # Fallback to multi-hot labels (convert to single label)
+            task_labels = batch['task_labels']  # [batch_size, num_tasks]
+            true_tasks = torch.argmax(task_labels, dim=-1)
+        else:
+            # No ground truth available, use entropy-based metric
+            entropy = -torch.sum(routing_probs * torch.log(routing_probs + 1e-8), dim=1)
+            avg_entropy = entropy.mean().item()
+            max_entropy = torch.log(torch.tensor(float(routing_probs.size(1))))
+            normalized_entropy = avg_entropy / max_entropy.item()
+            return max(0.0, 1.0 - normalized_entropy)
         
         # Compute accuracy
         correct = (predicted_tasks == true_tasks).float()
@@ -705,18 +808,32 @@ class Phase2Trainer:
             adapter_path = os.path.join(phase1_dir, f"{task_name}_adapter.pt")
             
             try:
-                # Load adapter checkpoint
-                adapter_checkpoint = torch.load(adapter_path, map_location=self.device)
+                logger.info(f"  📁 Loading {task_name} adapter from {adapter_path}")
+                
+                # Load adapter checkpoint to CPU first (safer for cross-platform compatibility)
+                adapter_checkpoint = torch.load(adapter_path, map_location='cpu')
+                logger.info(f"  ✅ Checkpoint loaded, keys: {list(adapter_checkpoint.keys())[:5]}...")
                 
                 # Get the adapter and load its state
                 adapter = self.model.adapters.get_adapter(task_name)
-                adapter.load_state_dict(adapter_checkpoint['adapter_state_dict'])
+                logger.info(f"  📋 Adapter type: {type(adapter)}")
+                
+                # The checkpoint contains the state dict directly, not wrapped in 'adapter_state_dict'
+                logger.info(f"  🔄 Loading state dict into adapter...")
+                adapter.load_state_dict(adapter_checkpoint, strict=False)  # Use strict=False for compatibility
+                
+                # Move adapter to target device if needed
+                logger.info(f"  🎯 Moving adapter to device: {self.device}")
+                adapter.to(self.device)
                 
                 adapters_loaded += 1
-                logger.info(f"  ✅ Loaded {task_name} adapter (epoch {adapter_checkpoint.get('epoch', 'unknown')})")
+                logger.info(f"  ✅ Loaded {task_name} adapter from Phase 1 checkpoint")
                 
             except Exception as e:
                 logger.error(f"  ❌ Failed to load {task_name} adapter: {e}")
+                logger.error(f"  📍 Error type: {type(e).__name__}")
+                import traceback
+                logger.error(f"  📍 Traceback: {traceback.format_exc()}")
                 raise RuntimeError(f"Failed to load {task_name} adapter from {adapter_path}")
         
         logger.info(f"🎉 Successfully loaded {adapters_loaded}/{len(self.model.task_names)} Phase 1 adapters!")

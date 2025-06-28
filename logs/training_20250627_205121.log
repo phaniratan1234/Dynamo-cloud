@@ -1,0 +1,5 @@
+2025-06-27 20:51:21,710 - training.phase2_router_training - INFO - info:68 - Phase 2 trainer initialized
+2025-06-27 20:51:21,710 - training.phase2_router_training - INFO - info:68 - Starting Phase 2: Training dynamic router
+2025-06-27 20:51:21,710 - training.phase2_router_training - INFO - info:68 - Skipping checkpoint loading (resume=False)
+2025-06-27 20:51:32,172 - training.phase2_router_training - INFO - info:68 - Training router for 5 epochs
+2025-06-27 20:51:32,172 - training - INFO - info:68 - Starting Epoch 0

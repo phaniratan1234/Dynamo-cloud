@@ -1,0 +1,3 @@
+2025-06-27 20:35:43,970 - training.phase2_router_training - INFO - info:68 - 🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision
+2025-06-27 20:35:43,970 - training.phase2_router_training - INFO - info:68 - 📂 Loading Phase 1 adapter checkpoints...
+2025-06-27 20:35:43,988 - training.phase2_router_training - ERROR - error:76 -   ❌ Failed to load sentiment adapter: 'adapter_state_dict'

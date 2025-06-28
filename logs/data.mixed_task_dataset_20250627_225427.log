@@ -1,0 +1,8 @@
+2025-06-27 22:54:28,353 - data.mixed_task_dataset - INFO - info:68 - Router dataset generator initialized with 5 task datasets
+2025-06-27 22:54:28,356 - data.mixed_task_dataset - INFO - info:68 - Generated 10 examples for sentiment
+2025-06-27 22:54:28,368 - data.mixed_task_dataset - INFO - info:68 - Generated 10 examples for qa
+2025-06-27 22:54:28,406 - data.mixed_task_dataset - INFO - info:68 - Generated 10 examples for summarization
+2025-06-27 22:54:28,418 - data.mixed_task_dataset - INFO - info:68 - Generated 10 examples for code_generation
+2025-06-27 22:54:28,425 - data.mixed_task_dataset - INFO - info:68 - Generated 10 examples for translation
+2025-06-27 22:54:28,425 - data.mixed_task_dataset - INFO - info:68 - Generated 50 total examples for router training
+2025-06-27 22:54:28,425 - data.mixed_task_dataset - INFO - info:68 - Created router training dataset with 50 examples

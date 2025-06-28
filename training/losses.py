@@ -227,12 +227,22 @@ class TemperatureRegularizationLoss(nn.Module):
         Compute temperature regularization loss.
         
         Args:
-            temperature: Current temperature value
+            temperature: Current temperature value (tensor or float)
         
         Returns:
             Temperature regularization loss
         """
-        temp_loss = F.mse_loss(temperature, torch.tensor(self.target_temperature, device=temperature.device))
+        # Handle both tensor and float inputs
+        if isinstance(temperature, (int, float)):
+            # Convert float to tensor
+            temperature_tensor = torch.tensor(temperature, dtype=torch.float32)
+            target_tensor = torch.tensor(self.target_temperature, dtype=torch.float32)
+        else:
+            # Temperature is already a tensor
+            temperature_tensor = temperature
+            target_tensor = torch.tensor(self.target_temperature, dtype=temperature.dtype, device=temperature.device)
+        
+        temp_loss = F.mse_loss(temperature_tensor, target_tensor)
         return self.weight * temp_loss
 
 
@@ -322,8 +332,8 @@ class TaskSpecificLoss(nn.Module):
             # Reshape for CrossEntropy loss
             # predictions: [batch_size * seq_len, vocab_size]
             # targets: [batch_size * seq_len]
-            predictions_flat = predictions.view(-1, vocab_size)
-            targets_flat = targets.view(-1)
+            predictions_flat = predictions.contiguous().view(-1, vocab_size)
+            targets_flat = targets.contiguous().view(-1)
             
             # Compute sequence-to-sequence loss
             loss = self.loss_fn(predictions_flat, targets_flat)
@@ -334,10 +344,101 @@ class TaskSpecificLoss(nn.Module):
             return self.weight * self.loss_fn(predictions, targets)
 
 
+class RouterSupervisionLoss(nn.Module):
+    """
+    Supervised loss for training the router to correctly identify task types.
+    This is the CRITICAL missing component for router learning.
+    """
+    
+    def __init__(self, weight: float = 1.0, temperature: float = 1.0):
+        """
+        Initialize router supervision loss.
+        
+        Args:
+            weight: Loss weight
+            temperature: Temperature for softmax (higher = softer targets)
+        """
+        super().__init__()
+        self.weight = weight
+        self.temperature = temperature
+        self.cross_entropy = nn.CrossEntropyLoss()
+    
+    def forward(
+        self, 
+        routing_logits: torch.Tensor, 
+        true_task_labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Compute supervised routing loss.
+        
+        Args:
+            routing_logits: Raw routing logits [batch_size, num_tasks]
+            true_task_labels: True task labels [batch_size] (single task per example)
+        
+        Returns:
+            Supervised routing loss
+        """
+        # Apply temperature scaling
+        scaled_logits = routing_logits / self.temperature
+        
+        # Compute cross-entropy loss
+        loss = self.cross_entropy(scaled_logits, true_task_labels)
+        
+        return self.weight * loss
+
+
+class RouterConfidenceLoss(nn.Module):
+    """
+    Loss to encourage confident routing decisions when the router is correct.
+    """
+    
+    def __init__(self, weight: float = 0.1, margin: float = 0.2):
+        """
+        Initialize router confidence loss.
+        
+        Args:
+            weight: Loss weight
+            margin: Minimum margin between correct and incorrect predictions
+        """
+        super().__init__()
+        self.weight = weight
+        self.margin = margin
+    
+    def forward(
+        self, 
+        routing_probs: torch.Tensor, 
+        true_task_labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Compute confidence loss.
+        
+        Args:
+            routing_probs: Routing probabilities [batch_size, num_tasks]
+            true_task_labels: True task labels [batch_size]
+        
+        Returns:
+            Confidence loss
+        """
+        batch_size, num_tasks = routing_probs.shape
+        
+        # Get probabilities for correct tasks
+        correct_probs = routing_probs.gather(1, true_task_labels.unsqueeze(1)).squeeze(1)
+        
+        # Get maximum probability for incorrect tasks
+        mask = torch.ones_like(routing_probs)
+        mask.scatter_(1, true_task_labels.unsqueeze(1), 0)
+        incorrect_probs = (routing_probs * mask).max(dim=1)[0]
+        
+        # Margin loss: encourage correct_prob > incorrect_prob + margin
+        loss = torch.clamp(incorrect_probs - correct_probs + self.margin, min=0.0)
+        
+        return self.weight * loss.mean()
+
+
 class DynamoLoss(nn.Module):
     """
     Combined loss function for DYNAMO training.
-    Integrates task-specific losses with routing losses.
+    Includes task-specific losses and routing losses.
     """
     
     def __init__(
@@ -348,19 +449,23 @@ class DynamoLoss(nn.Module):
         efficiency_weight: float = 0.05,
         consistency_weight: float = 0.1,
         entropy_weight: float = 0.01,
-        temperature_weight: float = 0.01
+        temperature_weight: float = 0.01,
+        router_supervision_weight: float = 2.0,  # NEW: High weight for supervision
+        router_confidence_weight: float = 0.5    # NEW: Confidence loss weight
     ):
         """
-        Initialize DYNAMO loss.
+        Initialize DYNAMO loss function.
         
         Args:
             task_names: List of task names
             num_experts: Number of experts/adapters
-            load_balance_weight: Weight for load balance loss
+            load_balance_weight: Weight for load balancing loss
             efficiency_weight: Weight for efficiency loss
             consistency_weight: Weight for consistency loss
             entropy_weight: Weight for entropy regularization
             temperature_weight: Weight for temperature regularization
+            router_supervision_weight: Weight for router supervision loss (CRITICAL)
+            router_confidence_weight: Weight for router confidence loss
         """
         super().__init__()
         
@@ -378,12 +483,18 @@ class DynamoLoss(nn.Module):
         self.consistency_loss = ConsistencyLoss(weight=consistency_weight)
         self.entropy_loss = EntropyRegularizationLoss(weight=entropy_weight)
         self.temperature_loss = TemperatureRegularizationLoss(weight=temperature_weight)
+        
+        # NEW: Critical supervised learning components
+        self.router_supervision_loss = RouterSupervisionLoss(weight=router_supervision_weight)
+        self.router_confidence_loss = RouterConfidenceLoss(weight=router_confidence_weight)
     
     def forward(
         self,
         task_outputs: Dict[str, torch.Tensor],
         task_targets: Dict[str, torch.Tensor],
         routing_probs: torch.Tensor,
+        routing_logits: torch.Tensor,  # NEW: Need raw logits for supervision
+        true_task_labels: torch.Tensor,  # NEW: Ground truth task labels
         input_embeddings: Optional[torch.Tensor] = None,
         temperature: Optional[torch.Tensor] = None,
         training_phase: str = "phase3"
@@ -395,6 +506,8 @@ class DynamoLoss(nn.Module):
             task_outputs: Dictionary of task predictions
             task_targets: Dictionary of task targets
             routing_probs: Routing probabilities
+            routing_logits: Raw routing logits (for supervision)
+            true_task_labels: Ground truth task labels [batch_size]
             input_embeddings: Input embeddings (for consistency loss)
             temperature: Current temperature (for temperature regularization)
             training_phase: Current training phase
@@ -426,6 +539,16 @@ class DynamoLoss(nn.Module):
         
         # Routing losses (only in phase 2 and 3)
         if training_phase in ["phase2", "phase3"]:
+            # CRITICAL: Router supervision loss - teaches router to identify tasks
+            router_supervision = self.router_supervision_loss(routing_logits, true_task_labels)
+            losses["router_supervision_loss"] = router_supervision
+            total_loss += router_supervision
+            
+            # Router confidence loss - encourages confident correct decisions
+            router_confidence = self.router_confidence_loss(routing_probs, true_task_labels)
+            losses["router_confidence_loss"] = router_confidence
+            total_loss += router_confidence
+            
             # Load balance loss
             load_balance = self.load_balance_loss(routing_probs)
             losses["load_balance_loss"] = load_balance
@@ -436,7 +559,7 @@ class DynamoLoss(nn.Module):
             losses["efficiency_loss"] = efficiency
             total_loss += efficiency
             
-            # Entropy regularization
+            # Entropy regularization (reduced weight when we have supervision)
             entropy_reg = self.entropy_loss(routing_probs)
             losses["entropy_loss"] = entropy_reg
             total_loss += entropy_reg
@@ -530,20 +653,42 @@ def create_loss_function(
     Create DYNAMO loss function from configuration.
     
     Args:
-        config: Training configuration
+        config: Training configuration (dictionary or config object)
         task_names: List of task names
         num_experts: Number of experts/adapters
     
     Returns:
         Configured DYNAMO loss function
     """
+    # Handle both dictionary and config object formats
+    if isinstance(config, dict):
+        # Dictionary format
+        load_balance_weight = config.get("load_balance_weight", 0.1)
+        efficiency_weight = config.get("efficiency_weight", 0.05)
+        consistency_weight = config.get("consistency_weight", 0.1)
+        entropy_weight = config.get("entropy_weight", 0.01)
+        temperature_weight = config.get("temperature_weight", 0.01)
+        router_supervision_weight = config.get("router_supervision_weight", 2.0)  # NEW
+        router_confidence_weight = config.get("router_confidence_weight", 0.5)    # NEW
+    else:
+        # Config object format
+        load_balance_weight = getattr(config, "load_balance_weight", 0.1)
+        efficiency_weight = getattr(config, "efficiency_weight", 0.05)
+        consistency_weight = getattr(config, "consistency_weight", 0.1)
+        entropy_weight = getattr(config, "entropy_weight", 0.01)
+        temperature_weight = getattr(config, "temperature_weight", 0.01)
+        router_supervision_weight = getattr(config, "router_supervision_weight", 2.0)  # NEW
+        router_confidence_weight = getattr(config, "router_confidence_weight", 0.5)    # NEW
+    
     return DynamoLoss(
         task_names=task_names,
         num_experts=num_experts,
-        load_balance_weight=config.get("load_balance_weight", 0.1),
-        efficiency_weight=config.get("efficiency_weight", 0.05),
-        consistency_weight=config.get("consistency_weight", 0.1),
-        entropy_weight=config.get("entropy_weight", 0.01),
-        temperature_weight=config.get("temperature_weight", 0.01)
+        load_balance_weight=load_balance_weight,
+        efficiency_weight=efficiency_weight,
+        consistency_weight=consistency_weight,
+        entropy_weight=entropy_weight,
+        temperature_weight=temperature_weight,
+        router_supervision_weight=router_supervision_weight,  # NEW
+        router_confidence_weight=router_confidence_weight     # NEW
     )
 

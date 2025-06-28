@@ -1,0 +1,18 @@
+2025-06-27 21:06:47,329 - data.dataset_loaders - INFO - info:68 - Dataset loader initialized
+2025-06-27 21:06:47,330 - data.dataset_loaders - INFO - info:68 - Loading real SST-2 train data from ./data/sst2/train.json
+2025-06-27 21:06:47,381 - data.dataset_loaders - INFO - info:68 - Limited SST-2 train data to 8000 samples (was 67349)
+2025-06-27 21:06:47,381 - data.dataset_loaders - INFO - info:68 - Loading real SQuAD train data from ./data/squad/train.json
+2025-06-27 21:06:47,719 - data.dataset_loaders - INFO - info:68 - Limited SQuAD train data to 15000 samples (was 87599)
+2025-06-27 21:06:47,719 - data.dataset_loaders - INFO - info:68 - Loading real XSum train data from ./data/xsum/train.json
+2025-06-27 21:06:47,940 - data.dataset_loaders - INFO - info:68 - Limited XSum train data to 10000 samples (was 20000)
+2025-06-27 21:06:47,941 - data.dataset_loaders - INFO - info:68 - Loading real code generation train data from ./data/code_generation/train.json
+2025-06-27 21:06:48,071 - data.dataset_loaders - INFO - info:68 - Limited code generation train data to 6000 samples (was 20000)
+2025-06-27 21:06:48,071 - data.dataset_loaders - INFO - info:68 - Loading real translation train data from ./data/translation/train.json
+2025-06-27 21:06:48,089 - data.dataset_loaders - INFO - info:68 - Limited translation train data to 8000 samples (was 10000)
+2025-06-27 21:06:48,089 - data.dataset_loaders - INFO - info:68 - Created 5 task datasets for train split
+2025-06-27 21:06:48,089 - data.dataset_loaders - INFO - info:68 - Loading real SST-2 validation data from ./data/sst2/validation.json
+2025-06-27 21:06:48,090 - data.dataset_loaders - INFO - info:68 - Loading real SQuAD validation data from ./data/squad/validation.json
+2025-06-27 21:06:48,109 - data.dataset_loaders - INFO - info:68 - Loading real XSum validation data from ./data/xsum/validation.json
+2025-06-27 21:06:48,122 - data.dataset_loaders - INFO - info:68 - Loading real code generation validation data from ./data/code_generation/validation.json
+2025-06-27 21:06:48,131 - data.dataset_loaders - INFO - info:68 - Loading real translation validation data from ./data/translation/validation.json
+2025-06-27 21:06:48,132 - data.dataset_loaders - INFO - info:68 - Created 5 task datasets for validation split

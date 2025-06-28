@@ -65,6 +65,11 @@ training:
   temperature_decay: 0.999
   min_temperature: 0.1
   
+  # Curriculum learning parameters for Phase 2
+  curriculum_start_ratio: 0.8
+  curriculum_end_ratio: 0.2
+  patience: 5  # Early stopping patience
+  
   # GPU-specific optimizations
   use_mixed_precision: true
   dataloader_num_workers: 8  # Optimal for T4

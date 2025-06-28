@@ -1,0 +1,12 @@
+2025-06-27 22:18:32,288 - model.lora_adapters - INFO - info:68 - Created sentiment LoRA adapter with 2,950,274 parameters
+2025-06-27 22:18:32,306 - model.lora_adapters - INFO - info:68 - Created qa LoRA adapter with 3,982,850 parameters
+2025-06-27 22:18:32,422 - model.lora_adapters - INFO - info:68 - Created summarization LoRA adapter with 45,144,153 parameters
+2025-06-27 22:18:32,536 - model.lora_adapters - INFO - info:68 - Created code_generation LoRA adapter with 45,144,153 parameters
+2025-06-27 22:18:32,654 - model.lora_adapters - INFO - info:68 - Created translation LoRA adapter with 45,144,153 parameters
+2025-06-27 22:18:32,655 - model.lora_adapters - INFO - info:68 - Created LoRA adapter collection with 5 adapters
+2025-06-27 22:18:32,656 - model.lora_adapters - INFO - info:68 - Total LoRA parameters: 142,365,583
+2025-06-27 22:18:32,661 - model.lora_adapters - INFO - info:68 - Unfrozen sentiment adapter
+2025-06-27 22:18:32,661 - model.lora_adapters - INFO - info:68 - Unfrozen qa adapter
+2025-06-27 22:18:32,661 - model.lora_adapters - INFO - info:68 - Unfrozen summarization adapter
+2025-06-27 22:18:32,661 - model.lora_adapters - INFO - info:68 - Unfrozen code_generation adapter
+2025-06-27 22:18:32,662 - model.lora_adapters - INFO - info:68 - Unfrozen translation adapter

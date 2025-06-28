@@ -1,6 +1,6 @@
 """
-Mixed task dataset generator for DYNAMO.
-Creates examples that require multiple adapters to handle complex, multi-task inputs.
+Task-specific dataset for DYNAMO router training.
+Creates single-task examples with proper task labels for supervised router learning.
 """
 
 import torch
@@ -25,54 +25,58 @@ except ImportError:
 logger = get_logger(__name__)
 
 
-class MixedTaskExample:
+class TaskSpecificExample:
     """
-    Represents a mixed-task example that requires multiple adapters.
+    Represents a single-task example for router training.
+    This is the correct approach - teach router to recognize task types.
     """
     
     def __init__(
         self,
         input_text: str,
-        tasks: List[str],
-        expected_outputs: Dict[str, Any],
-        instruction: str = "",
-        difficulty: str = "medium"
+        task_name: str,
+        target: Any,
+        task_id: int,
+        source_dataset: str = "",
+        confidence: float = 1.0
     ):
         """
-        Initialize mixed task example.
+        Initialize task-specific example.
         
         Args:
             input_text: Input text for the example
-            tasks: List of tasks required for this example
-            expected_outputs: Expected outputs for each task
-            instruction: Human-readable instruction
-            difficulty: Difficulty level (easy, medium, hard)
+            task_name: Name of the task (sentiment, qa, summarization, etc.)
+            target: Target output for this task
+            task_id: Numeric ID of the task (for router supervision)
+            source_dataset: Name of source dataset
+            confidence: Confidence in the task label (for curriculum learning)
         """
         self.input_text = input_text
-        self.tasks = tasks
-        self.expected_outputs = expected_outputs
-        self.instruction = instruction
-        self.difficulty = difficulty
-        self.task_weights = {task: 1.0 / len(tasks) for task in tasks}  # Equal weights by default
+        self.task_name = task_name
+        self.target = target
+        self.task_id = task_id
+        self.source_dataset = source_dataset
+        self.confidence = confidence
 
 
-class MixedTaskDataset(Dataset):
+class RouterTrainingDataset(Dataset):
     """
-    Dataset containing mixed-task examples for router training.
+    Dataset for training the router to recognize task types.
+    Contains single-task examples with clear task labels.
     """
     
     def __init__(
         self,
-        examples: List[MixedTaskExample],
+        examples: List[TaskSpecificExample],
         tokenizer: RobertaTokenizer,
         max_length: int = 512,
         task_to_id: Dict[str, int] = None
     ):
         """
-        Initialize mixed task dataset.
+        Initialize router training dataset.
         
         Args:
-            examples: List of mixed task examples
+            examples: List of task-specific examples
             tokenizer: RoBERTa tokenizer
             max_length: Maximum sequence length
             task_to_id: Mapping from task names to IDs
@@ -96,7 +100,7 @@ class MixedTaskDataset(Dataset):
         return len(self.examples)
     
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        """Get a single mixed task example."""
+        """Get a single task-specific example."""
         example = self.examples[idx]
         
         # Tokenize input
@@ -108,508 +112,454 @@ class MixedTaskDataset(Dataset):
             return_tensors='pt'
         )
         
-        # Create task labels (multi-hot encoding)
-        task_labels = torch.zeros(len(self.task_to_id))
-        for task in example.tasks:
-            if task in self.task_to_id:
-                task_labels[self.task_to_id[task]] = 1.0
+        # Process target based on task type
+        processed_target = self._process_target(example.target, example.task_name)
         
-        # Create task weights
-        task_weights = torch.zeros(len(self.task_to_id))
-        for task, weight in example.task_weights.items():
-            if task in self.task_to_id:
-                task_weights[self.task_to_id[task]] = weight
-        
-        return {
+        # Create the data structure
+        data = {
             'input_ids': tokenized['input_ids'].squeeze(0),
             'attention_mask': tokenized['attention_mask'].squeeze(0),
-            'task_labels': task_labels,
-            'task_weights': task_weights,
-            'tasks': example.tasks,
-            'expected_outputs': example.expected_outputs,
-            'instruction': example.instruction,
-            'difficulty': example.difficulty,
-            'input_text': example.input_text
+            'task_label': torch.tensor(example.task_id, dtype=torch.long),  # For router supervision
+            'task_name': example.task_name,
+            'input_text': example.input_text,
+            'confidence': torch.tensor(example.confidence, dtype=torch.float32)
         }
+        
+        # Add task-specific target
+        data[example.task_name] = processed_target
+        
+        # Add default values for other tasks (for compatibility)
+        all_tasks = ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']
+        for task_name in all_tasks:
+            if task_name not in data:
+                data[task_name] = self._get_default_target(task_name)
+        
+        return data
+    
+    def _process_target(self, target: Any, task_name: str) -> torch.Tensor:
+        """Process target based on task type."""
+        if task_name == 'sentiment':
+            # Binary classification: 0 or 1
+            if isinstance(target, str):
+                return torch.tensor(1 if target.lower() in ['positive', '1'] else 0, dtype=torch.long)
+            return torch.tensor(int(target), dtype=torch.long)
+        
+        elif task_name == 'qa':
+            # Question answering: [start_pos, end_pos]
+            if isinstance(target, (list, tuple)) and len(target) == 2:
+                return torch.tensor(target, dtype=torch.long)
+            elif isinstance(target, dict) and 'start' in target and 'end' in target:
+                return torch.tensor([target['start'], target['end']], dtype=torch.long)
+            else:
+                return torch.tensor([0, 0], dtype=torch.long)  # Default
+        
+        elif task_name in ['summarization', 'code_generation', 'translation']:
+            # Generation tasks: tokenize string targets
+            if isinstance(target, str):
+                tokenized_target = self.tokenizer(
+                    target,
+                    max_length=self.max_length,
+                    padding='max_length',
+                    truncation=True,
+                    return_tensors='pt'
+                )
+                return tokenized_target['input_ids'].squeeze(0)
+            elif isinstance(target, torch.Tensor):
+                return target
+            else:
+                # Default empty sequence
+                empty_tokens = torch.zeros(self.max_length, dtype=torch.long)
+                empty_tokens[0] = self.tokenizer.bos_token_id if self.tokenizer.bos_token_id else 0
+                return empty_tokens
+        
+        else:
+            # Unknown task
+            return torch.tensor(0, dtype=torch.long)
+    
+    def _get_default_target(self, task_name: str) -> torch.Tensor:
+        """Get default target for tasks not present in this example."""
+        if task_name == 'sentiment':
+            return torch.tensor(0, dtype=torch.long)  # Default neutral
+        elif task_name == 'qa':
+            return torch.tensor([0, 0], dtype=torch.long)  # Default positions
+        elif task_name in ['summarization', 'code_generation', 'translation']:
+            empty_tokens = torch.zeros(self.max_length, dtype=torch.long)
+            empty_tokens[0] = self.tokenizer.bos_token_id if self.tokenizer.bos_token_id else 0
+            return empty_tokens
+        else:
+            return torch.tensor(0, dtype=torch.long)
 
 
-class MixedTaskGenerator:
+class RouterDatasetGenerator:
     """
-    Generator for creating mixed-task examples.
+    Generator for creating router training dataset from single-task datasets.
     """
     
     def __init__(
         self,
         single_task_datasets: Dict[str, Dataset],
         tokenizer: RobertaTokenizer,
-        config: Dict[str, Any] = None
+        task_to_id: Dict[str, int] = None
     ):
         """
-        Initialize mixed task generator.
+        Initialize router dataset generator.
         
         Args:
             single_task_datasets: Dictionary of single-task datasets
             tokenizer: RoBERTa tokenizer
-            config: Configuration for generation
+            task_to_id: Mapping from task names to IDs
         """
         self.single_task_datasets = single_task_datasets
         self.tokenizer = tokenizer
-        self.config = config or {}
         
-        # Task combination strategies
-        self.task_combinations = [
-            ['sentiment', 'summarization'],  # Analyze sentiment and summarize
-            ['qa', 'sentiment'],             # Answer question and analyze sentiment
-            ['code_generation', 'summarization'],  # Generate code and summarize
-            ['translation', 'sentiment'],    # Translate and analyze sentiment
-            ['qa', 'summarization'],         # Answer question and summarize
-            ['sentiment', 'code_generation'], # Analyze sentiment and generate code
-            ['translation', 'summarization'], # Translate and summarize
-        ]
+        if task_to_id is None:
+            task_to_id = {
+                'sentiment': 0,
+                'qa': 1,
+                'summarization': 2,
+                'code_generation': 3,
+                'translation': 4
+            }
+        self.task_to_id = task_to_id
         
-        # Instruction templates
-        self.instruction_templates = {
-            ('sentiment', 'summarization'): [
-                "Analyze the sentiment of this text and provide a summary.",
-                "Determine if this text is positive or negative, then summarize it.",
-                "What's the sentiment of this passage? Also, give me a brief summary."
-            ],
-            ('qa', 'sentiment'): [
-                "Answer the question and tell me the sentiment of the passage.",
-                "What's the answer to this question? Also, is the text positive or negative?",
-                "Please answer the question and analyze the emotional tone."
-            ],
-            ('code_generation', 'summarization'): [
-                "Write code for this task and explain what it does.",
-                "Generate the requested code and provide a summary of its functionality.",
-                "Create code to solve this problem and describe how it works."
-            ],
-            ('translation', 'sentiment'): [
-                "Translate this text and tell me its sentiment.",
-                "What does this say in English? Also, is it positive or negative?",
-                "Please translate and analyze the emotional tone."
-            ],
-            ('qa', 'summarization'): [
-                "Answer the question and summarize the passage.",
-                "What's the answer? Also, give me a brief summary of the text.",
-                "Please answer the question and provide a summary."
-            ]
-        }
-        
-        logger.info("Mixed task generator initialized")
+        logger.info(f"Router dataset generator initialized with {len(single_task_datasets)} task datasets")
     
-    def generate_mixed_examples(
+    def generate_router_dataset(
         self,
-        num_examples: int = 5000,
-        difficulty_distribution: Dict[str, float] = None
-    ) -> List[MixedTaskExample]:
+        num_examples_per_task: int = 1000,
+        balance_tasks: bool = True,
+        include_curriculum: bool = True
+    ) -> List[TaskSpecificExample]:
         """
-        Generate mixed-task examples.
+        Generate router training dataset from single-task datasets.
         
         Args:
-            num_examples: Number of examples to generate
-            difficulty_distribution: Distribution of difficulty levels
+            num_examples_per_task: Number of examples per task
+            balance_tasks: Whether to balance examples across tasks
+            include_curriculum: Whether to include curriculum learning
         
         Returns:
-            List of mixed task examples
+            List of task-specific examples for router training
         """
-        if difficulty_distribution is None:
-            difficulty_distribution = {'easy': 0.3, 'medium': 0.5, 'hard': 0.2}
+        all_examples = []
         
-        examples = []
-        
-        logger.info(f"Generating {num_examples} mixed-task examples...")
-        
-        for i in range(num_examples):
-            # Select task combination
-            task_combo = random.choice(self.task_combinations)
-            
-            # Select difficulty
-            difficulty = random.choices(
-                list(difficulty_distribution.keys()),
-                weights=list(difficulty_distribution.values())
-            )[0]
-            
-            # Generate example for this combination
-            try:
-                example = self._generate_single_mixed_example(task_combo, difficulty)
-                if example:
-                    examples.append(example)
-            except Exception as e:
-                logger.warning(f"Failed to generate example {i}: {e}")
+        for task_name, dataset in self.single_task_datasets.items():
+            if task_name not in self.task_to_id:
+                logger.warning(f"Task {task_name} not in task_to_id mapping, skipping")
                 continue
             
-            if (i + 1) % 1000 == 0:
-                logger.info(f"Generated {i + 1}/{num_examples} examples")
+            task_id = self.task_to_id[task_name]
+            task_examples = []
+            
+            # Sample examples from the dataset
+            num_to_sample = min(num_examples_per_task, len(dataset))
+            indices = random.sample(range(len(dataset)), num_to_sample)
+            
+            for idx in indices:
+                try:
+                    data_item = dataset[idx]
+                    
+                    # Extract input text and target
+                    input_text, target = self._extract_input_and_target(data_item, task_name)
+                    
+                    if input_text:  # Only add if we successfully extracted input
+                        confidence = 1.0
+                        if include_curriculum:
+                            confidence = self._compute_curriculum_confidence(input_text, task_name)
+                        
+                        example = TaskSpecificExample(
+                            input_text=input_text,
+                            task_name=task_name,
+                            target=target,
+                            task_id=task_id,
+                            source_dataset=f"{task_name}_dataset",
+                            confidence=confidence
+                        )
+                        task_examples.append(example)
+                
+                except Exception as e:
+                    logger.warning(f"Failed to process example {idx} from {task_name}: {e}")
+                    continue
+            
+            logger.info(f"Generated {len(task_examples)} examples for {task_name}")
+            all_examples.extend(task_examples)
         
-        logger.info(f"Successfully generated {len(examples)} mixed-task examples")
-        return examples
+        # Shuffle examples
+        random.shuffle(all_examples)
+        
+        logger.info(f"Generated {len(all_examples)} total examples for router training")
+        return all_examples
     
-    def _generate_single_mixed_example(
-        self,
-        tasks: List[str],
-        difficulty: str = "medium"
-    ) -> Optional[MixedTaskExample]:
-        """
-        Generate a single mixed-task example.
+    def _extract_input_and_target(self, data_item: Dict, task_name: str) -> Tuple[str, Any]:
+        """Extract input text and target from a dataset item."""
+        try:
+            # The datasets are already processed and have 'input_text' and 'target' fields
+            if 'input_text' in data_item and 'target' in data_item:
+                input_text = data_item['input_text']
+                target = data_item['target']
+                
+                # Convert tensor targets to appropriate format
+                if isinstance(target, torch.Tensor):
+                    if task_name == 'sentiment':
+                        # Convert to scalar
+                        target = target.item() if target.numel() == 1 else int(target[0])
+                    elif task_name == 'qa':
+                        # Convert to list for QA
+                        if target.numel() == 2:
+                            target = target.tolist()
+                        else:
+                            target = [0, 0]  # Default
+                    elif task_name in ['summarization', 'code_generation', 'translation']:
+                        # For generation tasks, keep as tensor or convert back to text
+                        # We'll keep as tensor since it's already tokenized
+                        pass
+                
+                return input_text, target
+            
+            # Fallback to original logic for raw data formats
+            if task_name == 'sentiment':
+                # SST-2 format
+                if 'sentence' in data_item:
+                    input_text = data_item['sentence']
+                elif 'text' in data_item:
+                    input_text = data_item['text']
+                else:
+                    input_text = str(data_item.get('input', ''))
+                
+                target = data_item.get('label', 0)
+                return input_text, target
+            
+            elif task_name == 'qa':
+                # SQuAD format
+                if 'question' in data_item and 'context' in data_item:
+                    input_text = f"Question: {data_item['question']} Context: {data_item['context']}"
+                    answers = data_item.get('answers', {})
+                    if 'answer_start' in answers and len(answers['answer_start']) > 0:
+                        start = answers['answer_start'][0]
+                        text = answers.get('text', [''])[0]
+                        end = start + len(text)
+                        target = [start, end]
+                    else:
+                        target = [0, 0]
+                    return input_text, target
+                else:
+                    return "", [0, 0]
+            
+            elif task_name == 'summarization':
+                # XSum format
+                if 'document' in data_item:
+                    input_text = data_item['document']
+                    target = data_item.get('summary', '')
+                    return input_text, target
+                elif 'article' in data_item:
+                    input_text = data_item['article']
+                    target = data_item.get('highlights', '')
+                    return input_text, target
+                else:
+                    return "", ""
+            
+            elif task_name == 'code_generation':
+                # Code generation format
+                if 'prompt' in data_item:
+                    input_text = data_item['prompt']
+                    target = data_item.get('canonical_solution', '')
+                    return input_text, target
+                elif 'description' in data_item:
+                    input_text = data_item['description']
+                    target = data_item.get('code', '')
+                    return input_text, target
+                else:
+                    return "", ""
+            
+            elif task_name == 'translation':
+                # Translation format
+                if 'en' in data_item and 'fr' in data_item:
+                    input_text = f"Translate to French: {data_item['en']}"
+                    target = data_item['fr']
+                    return input_text, target
+                elif 'source' in data_item:
+                    input_text = f"Translate: {data_item['source']}"
+                    target = data_item.get('target', '')
+                    return input_text, target
+                else:
+                    return "", ""
+            
+            else:
+                return "", ""
         
-        Args:
-            tasks: List of tasks to combine
-            difficulty: Difficulty level
-        
-        Returns:
-            Mixed task example or None if generation fails
-        """
-        if len(tasks) == 2:
-            return self._generate_dual_task_example(tasks, difficulty)
-        elif len(tasks) > 2:
-            return self._generate_multi_task_example(tasks, difficulty)
-        else:
-            return None
+        except Exception as e:
+            logger.warning(f"Error extracting input/target for {task_name}: {e}")
+            return "", ""
     
-    def _generate_dual_task_example(
-        self,
-        tasks: List[str],
-        difficulty: str
-    ) -> Optional[MixedTaskExample]:
-        """Generate example combining two tasks."""
-        task1, task2 = tasks
+    def _compute_curriculum_confidence(self, input_text: str, task_name: str) -> float:
+        """Compute confidence for curriculum learning."""
+        # Simple heuristics for curriculum learning
+        text_length = len(input_text.split())
         
-        # Get sample data from each task
-        if task1 not in self.single_task_datasets or task2 not in self.single_task_datasets:
-            return None
+        if task_name == 'sentiment':
+            # Shorter texts are easier for sentiment
+            if text_length < 10:
+                return 1.0
+            elif text_length < 20:
+                return 0.8
+            else:
+                return 0.6
         
-        dataset1 = self.single_task_datasets[task1]
-        dataset2 = self.single_task_datasets[task2]
+        elif task_name == 'qa':
+            # Medium-length contexts are easier
+            if 50 < text_length < 200:
+                return 1.0
+            else:
+                return 0.7
         
-        # Sample examples
-        idx1 = random.randint(0, len(dataset1) - 1)
-        idx2 = random.randint(0, len(dataset2) - 1)
+        elif task_name in ['summarization', 'code_generation', 'translation']:
+            # Shorter inputs are easier for generation
+            if text_length < 50:
+                return 1.0
+            elif text_length < 100:
+                return 0.8
+            else:
+                return 0.6
         
-        example1 = dataset1[idx1]
-        example2 = dataset2[idx2]
-        
-        # Create mixed example based on task combination
-        if (task1, task2) == ('sentiment', 'summarization'):
-            return self._create_sentiment_summarization_example(example1, example2, difficulty)
-        elif (task1, task2) == ('qa', 'sentiment'):
-            return self._create_qa_sentiment_example(example1, example2, difficulty)
-        elif (task1, task2) == ('code_generation', 'summarization'):
-            return self._create_code_summarization_example(example1, example2, difficulty)
-        elif (task1, task2) == ('translation', 'sentiment'):
-            return self._create_translation_sentiment_example(example1, example2, difficulty)
-        elif (task1, task2) == ('qa', 'summarization'):
-            return self._create_qa_summarization_example(example1, example2, difficulty)
-        else:
-            return self._create_generic_mixed_example(tasks, [example1, example2], difficulty)
-    
-    def _create_sentiment_summarization_example(
-        self,
-        sentiment_example: Dict,
-        summarization_example: Dict,
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create sentiment + summarization example."""
-        # Use the document from summarization task
-        input_text = summarization_example['input_text']
-        
-        # Create instruction
-        templates = self.instruction_templates.get(('sentiment', 'summarization'), [
-            "Analyze the sentiment and provide a summary."
-        ])
-        instruction = random.choice(templates)
-        
-        # Expected outputs
-        expected_outputs = {
-            'sentiment': sentiment_example.get('target', 1),  # Default to positive
-            'summarization': summarization_example.get('target', "Summary not available")
-        }
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=['sentiment', 'summarization'],
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _create_qa_sentiment_example(
-        self,
-        qa_example: Dict,
-        sentiment_example: Dict,
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create QA + sentiment example."""
-        # Use the QA input (question + context)
-        input_text = qa_example['input_text']
-        
-        templates = self.instruction_templates.get(('qa', 'sentiment'), [
-            "Answer the question and analyze the sentiment."
-        ])
-        instruction = random.choice(templates)
-        
-        expected_outputs = {
-            'qa': qa_example.get('target', [0, 0]),
-            'sentiment': sentiment_example.get('target', 1)
-        }
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=['qa', 'sentiment'],
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _create_code_summarization_example(
-        self,
-        code_example: Dict,
-        summarization_example: Dict,
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create code generation + summarization example."""
-        # Use the code description as input
-        input_text = code_example['input_text']
-        
-        templates = self.instruction_templates.get(('code_generation', 'summarization'), [
-            "Generate code and explain what it does."
-        ])
-        instruction = random.choice(templates)
-        
-        expected_outputs = {
-            'code_generation': code_example.get('target', "# Code not available"),
-            'summarization': f"This code {code_example['input_text'].lower()}"
-        }
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=['code_generation', 'summarization'],
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _create_translation_sentiment_example(
-        self,
-        translation_example: Dict,
-        sentiment_example: Dict,
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create translation + sentiment example."""
-        # Use the source text from translation
-        input_text = translation_example['input_text']
-        
-        templates = self.instruction_templates.get(('translation', 'sentiment'), [
-            "Translate this text and analyze its sentiment."
-        ])
-        instruction = random.choice(templates)
-        
-        expected_outputs = {
-            'translation': translation_example.get('target', "Translation not available"),
-            'sentiment': sentiment_example.get('target', 1)
-        }
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=['translation', 'sentiment'],
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _create_qa_summarization_example(
-        self,
-        qa_example: Dict,
-        summarization_example: Dict,
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create QA + summarization example."""
-        input_text = qa_example['input_text']
-        
-        templates = self.instruction_templates.get(('qa', 'summarization'), [
-            "Answer the question and summarize the passage."
-        ])
-        instruction = random.choice(templates)
-        
-        expected_outputs = {
-            'qa': qa_example.get('target', [0, 0]),
-            'summarization': summarization_example.get('target', "Summary not available")
-        }
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=['qa', 'summarization'],
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _create_generic_mixed_example(
-        self,
-        tasks: List[str],
-        examples: List[Dict],
-        difficulty: str
-    ) -> MixedTaskExample:
-        """Create a generic mixed example."""
-        # Use the first example's input
-        input_text = examples[0]['input_text']
-        
-        instruction = f"Perform the following tasks: {', '.join(tasks)}"
-        
-        expected_outputs = {}
-        for i, task in enumerate(tasks):
-            if i < len(examples):
-                expected_outputs[task] = examples[i].get('target', None)
-        
-        return MixedTaskExample(
-            input_text=input_text,
-            tasks=tasks,
-            expected_outputs=expected_outputs,
-            instruction=instruction,
-            difficulty=difficulty
-        )
-    
-    def _generate_multi_task_example(
-        self,
-        tasks: List[str],
-        difficulty: str
-    ) -> Optional[MixedTaskExample]:
-        """Generate example with more than two tasks."""
-        # For now, limit to pairs and extend later
-        if len(tasks) > 2:
-            # Select two most compatible tasks
-            task_pair = tasks[:2]
-            return self._generate_dual_task_example(task_pair, difficulty)
-        return None
-    
-    def create_curriculum_examples(
-        self,
-        num_examples: int = 5000,
-        curriculum_ratio: float = 0.8
-    ) -> List[MixedTaskExample]:
-        """
-        Create examples with curriculum learning progression.
-        
-        Args:
-            num_examples: Total number of examples
-            curriculum_ratio: Ratio of easy examples at the start
-        
-        Returns:
-            List of examples ordered by difficulty
-        """
-        # Generate examples with different difficulties
-        easy_count = int(num_examples * curriculum_ratio)
-        medium_count = int(num_examples * (1 - curriculum_ratio) * 0.7)
-        hard_count = num_examples - easy_count - medium_count
-        
-        examples = []
-        
-        # Generate easy examples
-        easy_examples = self.generate_mixed_examples(
-            easy_count,
-            {'easy': 1.0, 'medium': 0.0, 'hard': 0.0}
-        )
-        examples.extend(easy_examples)
-        
-        # Generate medium examples
-        medium_examples = self.generate_mixed_examples(
-            medium_count,
-            {'easy': 0.0, 'medium': 1.0, 'hard': 0.0}
-        )
-        examples.extend(medium_examples)
-        
-        # Generate hard examples
-        hard_examples = self.generate_mixed_examples(
-            hard_count,
-            {'easy': 0.0, 'medium': 0.0, 'hard': 1.0}
-        )
-        examples.extend(hard_examples)
-        
-        logger.info(f"Created curriculum with {len(easy_examples)} easy, "
-                   f"{len(medium_examples)} medium, {len(hard_examples)} hard examples")
-        
-        return examples
+        return 1.0  # Default confidence
 
 
-def create_mixed_task_dataset(
+def create_router_training_dataset(
     single_task_datasets: Dict[str, Dataset],
+    tokenizer: RobertaTokenizer,
     config: Dict[str, Any],
-    num_examples: int = 5000
-) -> MixedTaskDataset:
+    num_examples_per_task: int = 1000
+) -> RouterTrainingDataset:
     """
-    Create mixed task dataset from single task datasets.
+    Create router training dataset from single-task datasets.
     
     Args:
-        single_task_datasets: Dictionary of single task datasets
+        single_task_datasets: Dictionary of single-task datasets
+        tokenizer: RoBERTa tokenizer
         config: Configuration dictionary
-        num_examples: Number of mixed examples to generate
+        num_examples_per_task: Number of examples per task
     
     Returns:
-        Mixed task dataset
+        Router training dataset
     """
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    generator = RouterDatasetGenerator(single_task_datasets, tokenizer)
     
-    # Create generator
-    generator = MixedTaskGenerator(single_task_datasets, tokenizer, config)
-    
-    # Generate examples
-    examples = generator.generate_mixed_examples(num_examples)
-    
-    # Create dataset
-    # Handle both dictionary and config object formats
-    if hasattr(config, 'get'):  # Dictionary
-        max_length = config.get('data', {}).get('max_input_length', 512)
-    else:  # Config object
-        max_length = getattr(config.data, 'max_input_length', 512) if hasattr(config, 'data') else 512
-    
-    dataset = MixedTaskDataset(
-        examples,
-        tokenizer,
-        max_length=max_length
+    examples = generator.generate_router_dataset(
+        num_examples_per_task=num_examples_per_task,
+        balance_tasks=True,
+        include_curriculum=True
     )
     
+    dataset = RouterTrainingDataset(
+        examples=examples,
+        tokenizer=tokenizer,
+        max_length=config.get('max_length', 512)
+    )
+    
+    logger.info(f"Created router training dataset with {len(dataset)} examples")
     return dataset
 
 
-def create_mixed_task_dataloader(
-    mixed_dataset: MixedTaskDataset,
+def router_training_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Collate function for router training dataset.
+    Handles single-task examples with proper task labels.
+    """
+    # Get all keys from the first item
+    keys = batch[0].keys()
+    collated = {}
+    
+    for key in keys:
+        if key in ['input_ids', 'attention_mask']:
+            # Stack tensor inputs
+            collated[key] = torch.stack([item[key] for item in batch])
+        
+        elif key == 'task_label':
+            # Stack task labels for router supervision
+            collated[key] = torch.stack([item[key] for item in batch])
+        
+        elif key == 'confidence':
+            # Stack confidence scores
+            collated[key] = torch.stack([item[key] for item in batch])
+        
+        elif key in ['task_name', 'input_text']:
+            # Keep as lists for string data
+            collated[key] = [item[key] for item in batch]
+        
+        elif key in ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']:
+            # Handle task-specific targets
+            values = [item[key] for item in batch]
+            
+            if key == 'sentiment':
+                # Sentiment: stack scalar labels
+                collated[key] = torch.stack([v if isinstance(v, torch.Tensor) else torch.tensor(v, dtype=torch.long) for v in values])
+            
+            elif key == 'qa':
+                # QA: stack [start, end] pairs
+                collated[key] = torch.stack([v if isinstance(v, torch.Tensor) else torch.tensor(v, dtype=torch.long) for v in values])
+            
+            elif key in ['summarization', 'code_generation', 'translation']:
+                # Generation: handle variable sequence lengths
+                processed_values = []
+                max_length = 512  # Default max length
+                
+                for v in values:
+                    if isinstance(v, torch.Tensor):
+                        # Pad or truncate to max_length
+                        if v.size(0) > max_length:
+                            v = v[:max_length]
+                        elif v.size(0) < max_length:
+                            # Pad with zeros (pad_token_id should be 1 for RoBERTa, but 0 is fine for targets)
+                            padding = torch.zeros(max_length - v.size(0), dtype=torch.long)
+                            v = torch.cat([v, padding])
+                        processed_values.append(v)
+                    else:
+                        # Create default tensor
+                        default_tensor = torch.zeros(max_length, dtype=torch.long)
+                        processed_values.append(default_tensor)
+                
+                collated[key] = torch.stack(processed_values)
+        
+        else:
+            # Keep other keys as lists
+            collated[key] = [item[key] for item in batch]
+    
+    return collated
+
+
+def create_router_training_dataloader(
+    router_dataset: RouterTrainingDataset,
     batch_size: int = 16,
     shuffle: bool = True,
     num_workers: int = None
 ) -> DataLoader:
     """
-    Create DataLoader for mixed task dataset.
+    Create DataLoader for router training.
     
     Args:
-        mixed_dataset: Mixed task dataset
+        router_dataset: Router training dataset
         batch_size: Batch size
-        shuffle: Whether to shuffle
-        num_workers: Number of workers (auto-detect if None)
+        shuffle: Whether to shuffle data
+        num_workers: Number of worker processes
     
     Returns:
-        DataLoader for mixed task dataset
+        DataLoader for router training
     """
-    # Auto-detect optimal num_workers for GPU training
     if num_workers is None:
-        if torch.cuda.is_available():
-            # For GPU: Use more workers for better data pipeline
-            num_workers = min(8, torch.get_num_threads())
-        else:
-            # For CPU: Use fewer workers to avoid overhead
-            num_workers = min(4, torch.get_num_threads())
-    
-    # Optimize pin_memory and prefetch
-    pin_memory = torch.cuda.is_available()
-    prefetch_factor = 2 if num_workers > 0 else None
+        num_workers = 0  # Single-threaded for compatibility
     
     return DataLoader(
-        mixed_dataset,
+        router_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=pin_memory,
-        prefetch_factor=prefetch_factor,
-        persistent_workers=num_workers > 0,  # Keep workers alive
-        drop_last=True  # Avoid irregular batch sizes
+        collate_fn=router_training_collate_fn,
+        pin_memory=True
     )
 
+
+# Legacy aliases for backward compatibility
+MixedTaskDataset = RouterTrainingDataset
+create_mixed_task_dataset = create_router_training_dataset
+mixed_task_collate_fn = router_training_collate_fn
+create_mixed_task_dataloader = create_router_training_dataloader 

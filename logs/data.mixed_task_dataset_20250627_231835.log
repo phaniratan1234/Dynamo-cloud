@@ -1,0 +1,16 @@
+2025-06-27 23:18:37,444 - data.mixed_task_dataset - INFO - info:68 - Router dataset generator initialized with 5 task datasets
+2025-06-27 23:18:37,583 - data.mixed_task_dataset - INFO - info:68 - Generated 800 examples for sentiment
+2025-06-27 23:18:38,112 - data.mixed_task_dataset - INFO - info:68 - Generated 800 examples for qa
+2025-06-27 23:18:40,052 - data.mixed_task_dataset - INFO - info:68 - Generated 800 examples for summarization
+2025-06-27 23:18:41,027 - data.mixed_task_dataset - INFO - info:68 - Generated 800 examples for code_generation
+2025-06-27 23:18:41,404 - data.mixed_task_dataset - INFO - info:68 - Generated 800 examples for translation
+2025-06-27 23:18:41,404 - data.mixed_task_dataset - INFO - info:68 - Generated 4000 total examples for router training
+2025-06-27 23:18:41,404 - data.mixed_task_dataset - INFO - info:68 - Created router training dataset with 4000 examples
+2025-06-27 23:18:41,404 - data.mixed_task_dataset - INFO - info:68 - Router dataset generator initialized with 5 task datasets
+2025-06-27 23:18:41,437 - data.mixed_task_dataset - INFO - info:68 - Generated 160 examples for sentiment
+2025-06-27 23:18:41,626 - data.mixed_task_dataset - INFO - info:68 - Generated 160 examples for qa
+2025-06-27 23:18:41,970 - data.mixed_task_dataset - INFO - info:68 - Generated 160 examples for summarization
+2025-06-27 23:18:42,232 - data.mixed_task_dataset - INFO - info:68 - Generated 160 examples for code_generation
+2025-06-27 23:18:42,296 - data.mixed_task_dataset - INFO - info:68 - Generated 160 examples for translation
+2025-06-27 23:18:42,296 - data.mixed_task_dataset - INFO - info:68 - Generated 800 total examples for router training
+2025-06-27 23:18:42,296 - data.mixed_task_dataset - INFO - info:68 - Created router training dataset with 800 examples

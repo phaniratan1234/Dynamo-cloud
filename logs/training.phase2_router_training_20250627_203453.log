@@ -1,0 +1,3 @@
+2025-06-27 20:34:54,709 - training.phase2_router_training - INFO - info:68 - 🚀 Phase 2 GPU optimizations enabled: cuDNN benchmark, mixed precision
+2025-06-27 20:34:54,709 - training.phase2_router_training - INFO - info:68 - 📂 Loading Phase 1 adapter checkpoints...
+2025-06-27 20:34:54,732 - training.phase2_router_training - ERROR - error:76 -   ❌ Failed to load sentiment adapter: module 'torch.mps' has no attribute 'current_device'

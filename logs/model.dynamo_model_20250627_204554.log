@@ -1,0 +1,7 @@
+2025-06-27 20:45:55,784 - model.dynamo_model - INFO - info:68 - Initializing DYNAMO model components...
+2025-06-27 20:45:56,777 - model.dynamo_model - INFO - info:68 - DYNAMO model initialized with 142,892,183 total parameters
+2025-06-27 20:45:56,778 - model.dynamo_model - INFO - info:68 -   - Backbone (frozen): 0
+2025-06-27 20:45:56,779 - model.dynamo_model - INFO - info:68 -   - Adapters: 142,365,583
+2025-06-27 20:45:56,779 - model.dynamo_model - INFO - info:68 -   - Router: 526,600
+2025-06-27 20:45:56,779 - model.dynamo_model - INFO - info:68 -   - Tasks: ['sentiment', 'qa', 'summarization', 'code_generation', 'translation']
+2025-06-27 20:45:57,157 - model.dynamo_model - INFO - info:68 - Set to Phase 2: Training dynamic router

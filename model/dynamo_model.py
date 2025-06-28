@@ -31,39 +31,63 @@ class DynamoModel(nn.Module):
         Initialize DYNAMO model.
         
         Args:
-            config: Configuration dictionary containing model settings
+            config: Configuration dictionary
         """
         super().__init__()
         
-        self.config = config
-        self.model_config = config.get("model", {})
+        # Handle both Config objects and dictionaries
+        if hasattr(config, '__dict__'):
+            # If it's a Config object, convert to dict
+            self.config = config.__dict__ if hasattr(config, '__dict__') else config
+        else:
+            self.config = config
+            
+        # Handle model config - could be dict or SimpleConfig object
+        if hasattr(config, 'model'):
+            # SimpleConfig object from train_optimized.py
+            model_config = config.model
+            if hasattr(model_config, '__dict__'):
+                self.model_config = model_config.__dict__
+            else:
+                self.model_config = model_config
+        else:
+            # Dictionary format
+            self.model_config = self.config.get("model", {})
         
         # Initialize components
         logger.info("Initializing DYNAMO model components...")
         
         # 1. RoBERTa Backbone (frozen)
+        base_model_name = getattr(self.model_config, 'base_model_name', 'roberta-base') if hasattr(self.model_config, 'base_model_name') else self.model_config.get("base_model_name", "roberta-base")
+        
         self.backbone = RobertaBackbone(
-            model_name=self.model_config.get("base_model_name", "roberta-base"),
+            model_name=base_model_name,
             freeze=True
         )
         
         # 2. LoRA Adapter Collection
+        lora_configs = getattr(self.model_config, 'lora_configs', {}) if hasattr(self.model_config, 'lora_configs') else self.model_config.get("lora_configs", {})
+        
         adapter_config = {
             "hidden_size": self.backbone.hidden_size,
             "num_layers": 12,  # RoBERTa-base has 12 layers
-            "lora_configs": self.model_config.get("lora_configs", {})
+            "lora_configs": lora_configs
         }
         self.adapters = LoRAAdapterCollection(adapter_config)
         
         # 3. Dynamic Router
-        router_config = self.model_config
+        router_hidden_sizes = getattr(self.model_config, 'router_hidden_sizes', [512, 256]) if hasattr(self.model_config, 'router_hidden_sizes') else self.model_config.get("router_hidden_sizes", [512, 256])
+        router_dropout = getattr(self.model_config, 'router_dropout', 0.1) if hasattr(self.model_config, 'router_dropout') else self.model_config.get("router_dropout", 0.1)
+        temperature_init = getattr(self.model_config, 'temperature_init', 1.0) if hasattr(self.model_config, 'temperature_init') else self.model_config.get("temperature_init", 1.0)
+        temperature_learnable = getattr(self.model_config, 'temperature_learnable', True) if hasattr(self.model_config, 'temperature_learnable') else self.model_config.get("temperature_learnable", True)
+        
         self.router = DynamicRouter(
             input_size=self.backbone.hidden_size,
-            hidden_sizes=router_config.get("router_hidden_sizes", [512, 256]),
+            hidden_sizes=router_hidden_sizes,
             num_tasks=self.adapters.get_num_tasks(),
-            dropout=router_config.get("router_dropout", 0.1),
-            temperature_init=router_config.get("temperature_init", 1.0),
-            temperature_learnable=router_config.get("temperature_learnable", True)
+            dropout=router_dropout,
+            temperature_init=temperature_init,
+            temperature_learnable=temperature_learnable
         )
         
         # Task mapping

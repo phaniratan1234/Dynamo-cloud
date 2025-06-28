@@ -300,18 +300,42 @@ class LoRAAdapterCollection(nn.Module):
         """
         super().__init__()
         
-        self.config = config
-        self.hidden_size = config.get("hidden_size", 768)
-        self.num_layers = config.get("num_layers", 12)
+        # Handle both Config objects and dictionaries
+        if hasattr(config, '__dict__'):
+            # If it's a Config object, convert to dict
+            self.config = config.__dict__ if hasattr(config, '__dict__') else config
+        else:
+            self.config = config
+            
+        self.hidden_size = self.config.get("hidden_size", 768)
+        self.num_layers = self.config.get("num_layers", 12)
         
         # Task configurations
-        self.task_configs = config.get("lora_configs", {
+        default_configs = {
             "sentiment": {"rank": 16, "alpha": 32, "dropout": 0.1},
             "qa": {"rank": 32, "alpha": 64, "dropout": 0.1},
             "summarization": {"rank": 24, "alpha": 48, "dropout": 0.1},
             "code_generation": {"rank": 20, "alpha": 40, "dropout": 0.1},
             "translation": {"rank": 28, "alpha": 56, "dropout": 0.1}
-        })
+        }
+        
+        lora_configs = self.config.get("lora_configs", default_configs)
+        
+        # Handle SimpleConfig objects
+        if hasattr(lora_configs, '__dict__'):
+            # Convert SimpleConfig to dict
+            self.task_configs = {}
+            for attr_name in dir(lora_configs):
+                if not attr_name.startswith('_'):
+                    attr_value = getattr(lora_configs, attr_name)
+                    if hasattr(attr_value, '__dict__'):
+                        # Convert nested SimpleConfig to dict
+                        self.task_configs[attr_name] = attr_value.__dict__
+                    else:
+                        self.task_configs[attr_name] = attr_value
+        else:
+            # Regular dictionary
+            self.task_configs = lora_configs
         
         # Create adapters
         self.adapters = nn.ModuleDict()

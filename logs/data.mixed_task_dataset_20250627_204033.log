@@ -1,0 +1,7 @@
+2025-06-27 20:40:36,406 - data.mixed_task_dataset - INFO - info:68 - Mixed task generator initialized
+2025-06-27 20:40:36,406 - data.mixed_task_dataset - INFO - info:68 - Generating 4000 mixed-task examples...
+2025-06-27 20:40:38,706 - data.mixed_task_dataset - INFO - info:68 - Generated 1000/4000 examples
+2025-06-27 20:40:40,673 - data.mixed_task_dataset - INFO - info:68 - Generated 2000/4000 examples
+2025-06-27 20:40:42,602 - data.mixed_task_dataset - INFO - info:68 - Generated 3000/4000 examples
+2025-06-27 20:40:44,530 - data.mixed_task_dataset - INFO - info:68 - Generated 4000/4000 examples
+2025-06-27 20:40:44,530 - data.mixed_task_dataset - INFO - info:68 - Successfully generated 4000 mixed-task examples

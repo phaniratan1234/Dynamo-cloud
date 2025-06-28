@@ -14,9 +14,13 @@ from .dataset_loaders import (
 )
 
 from .mixed_task_dataset import (
-    MixedTaskExample,
+    TaskSpecificExample,
+    RouterTrainingDataset,
+    RouterDatasetGenerator,
+    create_router_training_dataset,
+    create_router_training_dataloader,
+    # Legacy aliases for backward compatibility
     MixedTaskDataset,
-    MixedTaskGenerator,
     create_mixed_task_dataset,
     create_mixed_task_dataloader
 )
@@ -29,9 +33,13 @@ __all__ = [
     'CodeGenerationDataset',
     'TranslationDataset',
     'DatasetLoader',
-    'MixedTaskExample',
+    'TaskSpecificExample',
+    'RouterTrainingDataset',
+    'RouterDatasetGenerator',
+    'create_router_training_dataset',
+    'create_router_training_dataloader',
+    # Legacy aliases
     'MixedTaskDataset',
-    'MixedTaskGenerator',
     'create_mixed_task_dataset',
     'create_mixed_task_dataloader'
 ]

@@ -133,7 +133,7 @@ class Phase3Trainer:
         
         # Setup early stopping
         early_stopping = EarlyStopping(
-            patience=self.config.training.get('patience', 7),
+            patience=getattr(self.config.training, 'patience', 7),
             min_delta=0.0001
         )
         

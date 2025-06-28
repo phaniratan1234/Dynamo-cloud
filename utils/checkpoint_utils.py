@@ -13,6 +13,41 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def check_phase1_adapters_for_phase2(checkpoint_dir: str) -> Tuple[bool, List[str]]:
+    """
+    Check if Phase 1 adapter checkpoints are available for Phase 2 training.
+    Phase 2 only needs the trained adapters, not the complete Phase 1 model.
+    
+    Args:
+        checkpoint_dir: Path to checkpoint directory
+        
+    Returns:
+        Tuple of (adapters_ready, missing_adapter_files)
+    """
+    phase1_dir = os.path.join(checkpoint_dir, "phase1")
+    
+    # Required adapter files for Phase 2 (router training)
+    required_adapters = [
+        "sentiment_adapter.pt",
+        "qa_adapter.pt",
+        "summarization_adapter.pt", 
+        "code_generation_adapter.pt",
+        "translation_adapter.pt"
+    ]
+    
+    missing_adapters = []
+    
+    # Check each required adapter file
+    for filename in required_adapters:
+        filepath = os.path.join(phase1_dir, filename)
+        if not os.path.exists(filepath):
+            missing_adapters.append(filename)
+    
+    adapters_ready = len(missing_adapters) == 0
+    
+    return adapters_ready, missing_adapters
+
+
 def check_phase1_completion(checkpoint_dir: str) -> Tuple[bool, List[str], Dict[str, any]]:
     """
     Check if Phase 1 training is completed and ready for Phase 2.
@@ -101,6 +136,16 @@ def print_phase1_status(checkpoint_dir: str):
         
     else:
         print("⏳ Phase 1 IN PROGRESS or NOT STARTED")
+        
+        # Get existing files from the check_phase1_completion result
+        phase1_dir = os.path.join(checkpoint_dir, "phase1")
+        required_files = [
+            "sentiment_adapter.pt", "qa_adapter.pt", "summarization_adapter.pt", 
+            "code_generation_adapter.pt", "translation_adapter.pt",
+            "phase1_model.pt", "training_metrics.pt"
+        ]
+        existing_files = [f for f in required_files if os.path.exists(os.path.join(phase1_dir, f))]
+        
         print(f"\n❌ Missing files ({len(missing_files)}/{len(missing_files) + len(existing_files)}):")
         for filename in missing_files:
             print(f"  - {filename}")
@@ -151,12 +196,16 @@ def validate_checkpoint_transition(from_phase: int, to_phase: int, checkpoint_di
         return True
         
     elif to_phase == 2:
-        # Phase 2 requires Phase 1 completion
-        is_complete, missing, _ = check_phase1_completion(checkpoint_dir)
-        if not is_complete:
-            logger.error(f"❌ Cannot start Phase 2: Phase 1 incomplete. Missing: {missing}")
-            print_phase1_status(checkpoint_dir)
+        # Phase 2 requires Phase 1 adapters (not the complete Phase 1 model)
+        adapters_ready, missing_adapters = check_phase1_adapters_for_phase2(checkpoint_dir)
+        if not adapters_ready:
+            logger.error(f"❌ Cannot start Phase 2: Missing trained adapters from Phase 1: {missing_adapters}")
+            logger.error("Phase 2 router training requires trained adapters from Phase 1.")
+            logger.error("Please complete Phase 1 training first by running:")
+            logger.error("  python train_optimized.py --phase 1")
             return False
+        
+        logger.info("✅ Phase 1 adapters found - Phase 2 can proceed with router training")
         return True
         
     elif to_phase == 3:
